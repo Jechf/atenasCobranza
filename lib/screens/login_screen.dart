@@ -1,12 +1,27 @@
 import 'dart:convert';
 import '../config.dart';
 import '../home_screen.dart';
+import 'package:uuid/uuid.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+Future<String> getOrCreateDeviceId() async {
+  final prefs = await SharedPreferences.getInstance();
+  const key = 'unique_device_id';
+  final storedId = prefs.getString(key);
+
+  if (storedId != null) {
+    return storedId;
+  } else {
+    final newId =
+        const Uuid().v4(); // Ej: "2f1c9dc0-2e5f-4f4e-a123-bfcb0f8b9b17"
+    await prefs.setString(key, newId);
+    return newId;
+  }
+}
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -45,11 +60,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _fetchDeviceId() async {
     try {
-      DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
-      AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
+      final uuid = await getOrCreateDeviceId();
       setState(() {
-        _deviceId = androidInfo.id;
-        print(_deviceId);
+        _deviceId = uuid;
+        print("");
+        print('Device UUID: $_deviceId');
+        print('Device UUID: $_deviceId');
+        print('Device UUID: $_deviceId');
+        print("");
       });
     } catch (e) {
       setState(() {

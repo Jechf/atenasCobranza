@@ -46,6 +46,8 @@ dependencies:
   blue_thermal_printer: ^1.2.3
   intl: ^0.20.2
   google_fonts: ^6.2.1
+  uuid: ^4.5.1
+
 
 dev_dependencies:
   flutter_launcher_icons: ^0.13.1

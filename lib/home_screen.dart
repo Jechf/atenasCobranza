@@ -2,17 +2,31 @@ import 'dart:io';
 import 'dart:async';
 import 'config.dart';
 import 'dart:convert';
+import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+
+Future<String> getOrCreateDeviceId() async {
+  final prefs = await SharedPreferences.getInstance();
+  const key = 'unique_device_id';
+  final storedId = prefs.getString(key);
+
+  if (storedId != null) {
+    return storedId;
+  } else {
+    final newId = const Uuid().v4();
+    await prefs.setString(key, newId);
+    return newId;
+  }
+}
 
 class HomeScreen extends StatefulWidget {
   final Map<String, dynamic> cobrador;
@@ -355,10 +369,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _fetchDeviceId() async {
     try {
-      DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
-      AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
+      final uuid = await getOrCreateDeviceId();
       setState(() {
-        _deviceId = androidInfo.id;
+        _deviceId = uuid;
+        print('UUID persistente desde Home: $_deviceId');
       });
     } catch (e) {
       setState(() {
