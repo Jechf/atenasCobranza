@@ -64,8 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _montoController = TextEditingController();
   final TextEditingController _fechaController = TextEditingController();
   final TextEditingController _explicacionController = TextEditingController();
-  final TextEditingController _codigoController =
-      TextEditingController(); // Controlador para el código
+  final TextEditingController _codigoController = TextEditingController();
   final TextEditingController _novedadController = TextEditingController();
 
   File? _fotoMontoCero;
@@ -77,9 +76,12 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _mostrarFormularioMontoCero = false;
   bool _isMontoCero = false;
 
-  File? _selectedImage;
-
   BlueThermalPrinter bluetooth = BlueThermalPrinter.instance;
+
+  Map<String, dynamic>? _ultimoTicketData;
+  String? _ultimoTicketMensaje;
+  String? _ultimoTicketNumero;
+  String? _ultimoTicketRecibo;
 
   @override
   void initState() {
@@ -120,10 +122,23 @@ class _HomeScreenState extends State<HomeScreen> {
           ? Color(0xFF1A1B41)
           : Colors.grey;
     } else {
-      // Ahora solo verificamos que el monto esté confirmado
-      // (el código se verifica en el modal)
       return Color(0xFF1A1B41);
     }
+  }
+
+  void _guardarUltimoTicket(String mensaje, String ticket, String recibo) {
+    setState(() {
+      _ultimoTicketData = {
+        'agencia': nombreAgenciaSeleccionada,
+        'zona': selectedZonaId,
+        'monto': _montoController.text, // Asegurar que se guarda el monto
+        'moneda': selectedMoneda,
+        'fecha': _fechaController.text,
+      };
+      _ultimoTicketMensaje = mensaje;
+      _ultimoTicketNumero = ticket;
+      _ultimoTicketRecibo = recibo;
+    });
   }
 
   void _mostrarModal(
@@ -240,28 +255,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       _buildInfoRow("Cobrador:", widget.cobrador['nombre']),
                       SizedBox(height: 24),
 
-                      // // Código de confirmación recibido
-                      // Text(
-                      //   'Código de confirmación:',
-                      //   style: TextStyle(fontSize: 16),
-                      // ),
-                      // SizedBox(height: 8),
-                      // Text(
-                      //   codigoConfirmacion,
-                      //   style: TextStyle(
-                      //     fontSize: 24,
-                      //     fontWeight: FontWeight.bold,
-                      //     color: Colors.green[700],
-                      //   ),
-                      // ),
-                      // SizedBox(height: 16),
-                      // Text(
-                      //   'Comparta este código con el cliente',
-                      //   textAlign: TextAlign.center,
-                      //   style: TextStyle(fontSize: 14),
-                      // ),
-                      // // Campo para que el cliente ingrese el código
-                      // SizedBox(height: 20),
                       TextField(
                         controller: _codigoController,
                         keyboardType: TextInputType.number,
@@ -445,57 +438,17 @@ class _HomeScreenState extends State<HomeScreen> {
     await _fetchLocation();
   }
 
-  // ignore: unused_element
-  Future<void> _requestCameraPermission() async {
-    await Permission.camera.request();
-  }
-
   Future<void> _fetchDeviceId() async {
     try {
       final uuid = await getOrCreateDeviceId();
       setState(() {
         _deviceId = uuid;
-        print('UUID persistente desde Home: $_deviceId');
+        debugPrint('UUID persistente desde Home: $_deviceId');
       });
     } catch (e) {
       setState(() {
         _deviceId = 'Error al obtener el ID';
       });
-    }
-  }
-
-  Future<bool> _checkPrinterConnection() async {
-    // Instancia del plugin
-    BlueThermalPrinter bluetooth = BlueThermalPrinter.instance;
-
-    // Verificar si hay dispositivos conectados
-    bool isConnected = await bluetooth.isConnected ?? false;
-
-    return isConnected;
-  }
-
-  Future<void> _printReceipt(String mensaje) async {
-    BlueThermalPrinter bluetooth = BlueThermalPrinter.instance;
-
-    if (await bluetooth.isConnected ?? false) {
-      bluetooth.printNewLine();
-      bluetooth.printCustom(
-        'Monto Recibido',
-        2,
-        1,
-      ); // Texto, tamaño, alineación
-      bluetooth.printNewLine();
-      bluetooth.printCustom(
-        mensaje,
-        1,
-        0,
-      ); // Texto, tamaño, alineación izquierda
-      bluetooth.printNewLine();
-      bluetooth.printCustom('Gracias por su pago', 1, 1); // Alineado al centro
-      bluetooth.printNewLine();
-      bluetooth.printNewLine();
-    } else {
-      throw Exception('Impresora no conectada');
     }
   }
 
@@ -596,34 +549,18 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _pickImage() async {
-    try {
-      final XFile? image = await _picker.pickImage(source: ImageSource.camera);
-      if (image != null) {
-        setState(() {
-          _selectedImage = File(image.path);
-        });
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(
-        // ignore: use_build_context_synchronously
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error al tomar la foto: $e')));
-    }
-  }
-
   Future<void> _fetchZonas() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token') ?? '';
 
     try {
-      print('══════════════════════════════════════════════════');
-      print('🔵 Iniciando solicitud de zonas...');
-      print('URL: ${Config.apiUrl}listarZonas');
-      print(
+      debugPrint('══════════════════════════════════════════════════');
+      debugPrint('🔵 Iniciando solicitud de zonas...');
+      debugPrint('URL: ${Config.apiUrl}listarZonas');
+      debugPrint(
         'Headers: ${{'Authorization': 'Bearer $token', 'Content-Type': 'application/json'}}',
       );
-      print(
+      debugPrint(
         'Body: ${jsonEncode({'usuario': widget.usuario, 'db': widget.db})}',
       );
 
@@ -636,32 +573,32 @@ class _HomeScreenState extends State<HomeScreen> {
         body: jsonEncode({'usuario': widget.usuario, 'db': widget.db}),
       );
 
-      print('══════════════════════════════════════════════════');
-      print('🟢 Respuesta recibida - Código: ${response.statusCode}');
-      print('Headers de respuesta: ${response.headers}');
+      debugPrint('══════════════════════════════════════════════════');
+      debugPrint('🟢 Respuesta recibida - Código: ${response.statusCode}');
+      debugPrint('Headers de respuesta: ${response.headers}');
 
       // Imprimir el cuerpo de la respuesta formateado
       final responseBody = response.body;
-      print('Body de respuesta (raw):');
-      print(responseBody);
+      debugPrint('Body de respuesta (raw):');
+      debugPrint(responseBody);
 
       try {
         final data = json.decode(responseBody);
-        print('\nBody de respuesta (parsed JSON):');
-        print('• Estado (e): ${data['e']}');
+        debugPrint('\nBody de respuesta (parsed JSON):');
+        debugPrint('• Estado (e): ${data['e']}');
 
         if (data['data'] is List) {
-          print('• Cantidad de zonas: ${data['data'].length}');
-          print('\n📋 Lista completa de zonas:');
+          debugPrint('• Cantidad de zonas: ${data['data'].length}');
+          debugPrint('\n📋 Lista completa de zonas:');
 
           for (var i = 0; i < data['data'].length; i++) {
             final zona = data['data'][i];
-            print(
+            debugPrint(
               '  ${i + 1}. Código: "${zona['codigo']}" | Nombre: "${zona['nombre']}"',
             );
           }
         } else {
-          print('⚠️ El campo "data" no es una lista o no existe');
+          debugPrint('⚠️ El campo "data" no es una lista o no existe');
         }
 
         if (response.statusCode == 200) {
@@ -675,20 +612,20 @@ class _HomeScreenState extends State<HomeScreen> {
                       )
                       .toList();
             });
-            print('\n🟢 Zonas cargadas correctamente en el estado');
+            debugPrint('\n🟢 Zonas cargadas correctamente en el estado');
           } else {
-            print('\n🔴 Error en la estructura de la respuesta:');
-            print(data);
+            debugPrint('\n🔴 Error en la estructura de la respuesta:');
+            debugPrint(data);
           }
         }
       } catch (e) {
-        print('\n🔴 Error al parsear JSON: $e');
+        debugPrint('\n🔴 Error al parsear JSON: $e');
       }
 
-      print('══════════════════════════════════════════════════');
+      debugPrint('══════════════════════════════════════════════════');
     } catch (e) {
-      print('\n🔴 Error en la solicitud: $e');
-      print('══════════════════════════════════════════════════');
+      debugPrint('\n🔴 Error en la solicitud: $e');
+      debugPrint('══════════════════════════════════════════════════');
     }
   }
 
@@ -697,9 +634,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final token = prefs.getString('token') ?? '';
 
     try {
-      print('══════════════════════════════════════════════════');
-      print('🔵 Iniciando solicitud de agencias...');
-      print('URL: ${Config.apiUrl}listarAgencias');
+      debugPrint('══════════════════════════════════════════════════');
+      debugPrint('🔵 Iniciando solicitud de agencias...');
+      debugPrint('URL: ${Config.apiUrl}listarAgencias');
 
       // Crear el cuerpo de la solicitud según el formato requerido
       final requestBody = {
@@ -714,10 +651,10 @@ class _HomeScreenState extends State<HomeScreen> {
         "banca": "0001",
       };
 
-      print(
+      debugPrint(
         'Headers: ${{'Authorization': 'Bearer $token', 'Content-Type': 'application/json'}}',
       );
-      print('Body: ${json.encode(requestBody)}');
+      debugPrint('Body: ${json.encode(requestBody)}');
 
       final response = await http.post(
         Uri.parse('${Config.apiUrl}listarAgencias'),
@@ -728,31 +665,31 @@ class _HomeScreenState extends State<HomeScreen> {
         body: json.encode(requestBody), // Enviamos el cuerpo completo
       );
 
-      print('══════════════════════════════════════════════════');
-      print('🟢 Respuesta recibida - Código: ${response.statusCode}');
-      print('Headers de respuesta: ${response.headers}');
+      debugPrint('══════════════════════════════════════════════════');
+      debugPrint('🟢 Respuesta recibida - Código: ${response.statusCode}');
+      debugPrint('Headers de respuesta: ${response.headers}');
 
       final responseBody = response.body;
-      print('Body de respuesta (raw):');
-      print(responseBody);
+      debugPrint('Body de respuesta (raw):');
+      debugPrint(responseBody);
 
       try {
         final data = json.decode(responseBody);
-        print('\nBody de respuesta (parsed JSON):');
-        print('• Estado (e): ${data['e']}');
+        debugPrint('\nBody de respuesta (parsed JSON):');
+        debugPrint('• Estado (e): ${data['e']}');
 
         if (data['data'] is List) {
-          print('• Cantidad de agencias: ${data['data'].length}');
-          print('\n📋 Lista completa de agencias:');
+          debugPrint('• Cantidad de agencias: ${data['data'].length}');
+          debugPrint('\n📋 Lista completa de agencias:');
 
           for (var i = 0; i < data['data'].length; i++) {
             final agencia = data['data'][i];
-            print(
+            debugPrint(
               '  ${i + 1}. Código: "${agencia['codigo']}" | Nombre: "${agencia['nombre']}" | Estado: ${agencia['estado']}',
             );
           }
         } else {
-          print('⚠️ El campo "data" no es una lista o no existe');
+          debugPrint('⚠️ El campo "data" no es una lista o no existe');
         }
 
         if (response.statusCode == 200) {
@@ -767,20 +704,20 @@ class _HomeScreenState extends State<HomeScreen> {
                       )
                       .toList();
             });
-            print('\n🟢 Agencias cargadas correctamente en el estado');
+            debugPrint('\n🟢 Agencias cargadas correctamente en el estado');
           } else {
-            print('\n🔴 Error en la estructura de la respuesta:');
-            print(data);
+            debugPrint('\n🔴 Error en la estructura de la respuesta:');
+            debugPrint(data);
           }
         }
       } catch (e) {
-        print('\n🔴 Error al parsear JSON: $e');
+        debugPrint('\n🔴 Error al parsear JSON: $e');
       }
 
-      print('══════════════════════════════════════════════════');
+      debugPrint('══════════════════════════════════════════════════');
     } catch (e) {
-      print('\n🔴 Error en la solicitud: $e');
-      print('══════════════════════════════════════════════════');
+      debugPrint('\n🔴 Error en la solicitud: $e');
+      debugPrint('══════════════════════════════════════════════════');
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error al cargar agencias: $e')));
@@ -879,117 +816,6 @@ class _HomeScreenState extends State<HomeScreen> {
       return Colors.red; // Estado false - rojo (Pagar)
     } else {
       return Colors.grey; // Estado desconocido - gris
-    }
-  }
-
-  Future<void> _submitMonto() async {
-    if (_montoController.text.isEmpty ||
-        (double.tryParse(_montoController.text) ?? 0) == 0 &&
-            (_fotoMontoCero == null || _explicacionController.text.isEmpty)) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Datos requeridos incompletos')));
-      return;
-    }
-
-    if (!_isPrinterConnected) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Debe conectar una impresora antes de enviar')),
-      );
-      return;
-    }
-
-    setState(() {
-      _isSubmitting = true;
-    });
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token') ?? '';
-
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('${Config.apiUrl}enviar'),
-      );
-
-      request.headers['Authorization'] = 'Bearer $token';
-
-      // Campos comunes
-      request.fields.addAll({
-        'idAgencia': selectedAgenciaId.toString(),
-        'monto': _montoController.text,
-        'device_id': _deviceId,
-        'ubicacion': _location,
-        'cobrador': widget.cobrador['id'].toString(),
-        'fecha': _fechaController.text,
-      });
-
-      // Si el monto es cero, agregar la explicación
-      if ((double.tryParse(_montoController.text) ?? 0) == 0) {
-        request.fields['explicacion'] = _explicacionController.text;
-      }
-
-      // Agregar la imagen correspondiente
-      File? imagenAEnviar =
-          (double.tryParse(_montoController.text) ?? 0) == 0
-              ? _fotoMontoCero
-              : _selectedImage;
-
-      if (imagenAEnviar != null) {
-        var compressedImage = await _compressImage(imagenAEnviar);
-        var imageStream = http.ByteStream(compressedImage!.openRead());
-        var length = await compressedImage.length();
-
-        request.files.add(
-          http.MultipartFile(
-            'imagen',
-            imageStream,
-            length,
-            filename: 'comprobante.jpg',
-            contentType: MediaType('image', 'jpeg'),
-          ),
-        );
-      }
-
-      var response = await request.send().timeout(Duration(seconds: 30));
-
-      if (response.statusCode == 200) {
-        final responseData = await response.stream.bytesToString();
-        final data = json.decode(responseData);
-
-        if (data['e'] == 1) {
-          setState(() {
-            _numeroTicket =
-                data['ticket'].toString(); // Almacena el número de ticket
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Registro enviado exitosamente')),
-          );
-
-          setState(() {
-            _selectedImage = null;
-            _fotoMontoCero = null;
-            _explicacionController.clear();
-            _montoController.clear();
-            _codigoController.clear();
-            _mostrarFormularioMontoCero = false;
-            _isMontoConfirmed = false;
-            _isMontoCero = false;
-          });
-
-          if (await _checkPrinterConnection()) {
-            await _printReceipt(data['mensaje']);
-          }
-        }
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
-    } finally {
-      setState(() {
-        _isSubmitting = false;
-      });
     }
   }
 
@@ -1247,7 +1073,6 @@ class _HomeScreenState extends State<HomeScreen> {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token') ?? '';
 
-      // Insertar cobro (similar a _insertarCobro pero específico para monto cero)
       final insertResponse = await http.post(
         Uri.parse('${Config.apiUrl}insertarCobro'),
         headers: {
@@ -1260,13 +1085,12 @@ class _HomeScreenState extends State<HomeScreen> {
           'agencia': selectedAgenciaId.toString(),
           'ubicacion': _location,
           'banca': '0001',
-          'monto': '0', // Forzar monto cero
+          'monto': '0',
           'proceso': 'enviado',
           'moneda': selectedMoneda ?? 'COP',
           'device': _deviceId,
           'fecha': _fechaController.text,
-          'novedad':
-              _explicacionController.text, // Usar explicación como novedad
+          'novedad': _explicacionController.text,
         }),
       );
 
@@ -1275,7 +1099,17 @@ class _HomeScreenState extends State<HomeScreen> {
         throw Exception(insertData['mensaje'] ?? 'Error al insertar cobro');
       }
 
-      // 2. Enviar directamente con la foto
+      // Extraer el código de confirmación del mensaje
+      final mensaje = insertData['data'] as String;
+      final regex = RegExp(r'código: (\d+)');
+      final match = regex.firstMatch(mensaje);
+      final codigoConfirmacion = match?.group(1) ?? '';
+
+      if (codigoConfirmacion.isEmpty) {
+        throw Exception('No se pudo obtener código de confirmación');
+      }
+
+      // 2. Enviar directamente con la foto y el código obtenido
       var request = http.MultipartRequest(
         'POST',
         Uri.parse('${Config.apiUrl}enviar'),
@@ -1289,7 +1123,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'ubicacion': _location,
         'banca': '0001',
         'monto': '0',
-        'codigo': '0', // Código cero o vacío para monto cero
+        'codigo': codigoConfirmacion, // Usar el código obtenido
         'novedad': _explicacionController.text,
         'ticket': insertData['ticket']?.toString() ?? '',
       });
@@ -1313,19 +1147,18 @@ class _HomeScreenState extends State<HomeScreen> {
       final sendData = json.decode(await sendResponse.stream.bytesToString());
 
       if (sendResponse.statusCode == 200 && sendData['e'] == 1) {
-        // Mostrar confirmación
         _mostrarModalConfirmacion(
           sendData['mensaje'],
           sendData['ticket']?.toString() ?? 'N/A',
           sendData['recibo']?.toString() ?? 'N/A',
         );
 
-        // Imprimir si está conectado
         if (_isPrinterConnected) {
           await _imprimirComprobante(
             sendData['mensaje'],
             sendData['ticket']?.toString() ?? 'N/A',
             sendData['recibo']?.toString() ?? 'N/A',
+            _montoController.text, // Pasar el monto
           );
         }
 
@@ -1595,6 +1428,7 @@ class _HomeScreenState extends State<HomeScreen> {
             data['mensaje'],
             data['ticket']?.toString() ?? 'N/A',
             data['recibo']?.toString() ?? '',
+            _montoController.text, // Pasar el monto
           );
         }
 
@@ -1613,80 +1447,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _enviarMontoCero() async {
-    setState(() {
-      _isSubmitting = true;
-    });
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token') ?? '';
-
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('${Config.apiUrl}enviar'),
-      );
-
-      request.headers['Authorization'] = 'Bearer $token';
-
-      // Agregar campos específicos para monto cero
-      request.fields.addAll({
-        'usuario': widget.usuario,
-        'db': widget.db,
-        'agencia': selectedAgenciaId.toString(),
-        'ubicacion': _location,
-        'banca': '0001',
-        'monto': '0', // Forzamos monto cero
-        'codigo': '', // No requerido para monto cero
-        'novedad':
-            _explicacionController.text, // Usamos la explicación como novedad
-        'ticket': _numeroTicket ?? '',
-      });
-
-      // Agregar la imagen comprimida
-      var compressedImage = await _compressImage(_fotoMontoCero!);
-      var imageStream = http.ByteStream(compressedImage!.openRead());
-      var length = await compressedImage.length();
-
-      request.files.add(
-        http.MultipartFile(
-          'imagen',
-          imageStream,
-          length,
-          filename: 'comprobante_monto_cero.jpg',
-          contentType: MediaType('image', 'jpeg'),
-        ),
-      );
-
-      var response = await request.send();
-      final responseData = await response.stream.bytesToString();
-      final data = json.decode(responseData);
-
-      if (response.statusCode == 200 && data['e'] == 1) {
-        setState(() {
-          _numeroTicket = data['ticket'].toString();
-        });
-        _mostrarModalConfirmacion(
-          data['mensaje'],
-          data['ticket']?.toString() ?? 'N/A',
-          data['recibo']?.toString() ?? 'N/A',
-        );
-        _resetFormulario();
-      } else {
-        throw Exception(data['mensaje'] ?? 'Error en el servidor');
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error al enviar monto cero: $e')));
-    } finally {
-      setState(() {
-        _isSubmitting = false;
-      });
-    }
-  }
-
   void _mostrarModalConfirmacion(String mensaje, String ticket, String recibo) {
+    _guardarUltimoTicket(mensaje, ticket, recibo); // Guardar datos del ticket
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -1722,11 +1485,115 @@ class _HomeScreenState extends State<HomeScreen> {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                if (_isPrinterConnected) {
-                  _imprimirComprobante(mensaje, ticket, recibo);
-                }
               },
               child: Text("CERRAR"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _mostrarUltimoTicket() {
+    if (_ultimoTicketData == null ||
+        _ultimoTicketMensaje == null ||
+        _ultimoTicketNumero == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No hay información de último ticket disponible'),
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Center(child: Text("Último Ticket")),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_ultimoTicketMensaje!),
+                SizedBox(height: 10),
+                Text(
+                  "Agencia: ${_ultimoTicketData!['agencia'] ?? 'N/A'}",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  "Zona: ${_ultimoTicketData!['zona'] ?? 'N/A'}",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  "Fecha: ${_ultimoTicketData!['fecha'] ?? 'N/A'}",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 10),
+                Text(
+                  "Monto: ${_ultimoTicketData!['monto'] ?? '0'} ${_ultimoTicketData!['moneda'] ?? ''}",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+                SizedBox(height: 20),
+                Text(
+                  "Ticket N°: $_ultimoTicketNumero",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                    color: Colors.blue,
+                  ),
+                ),
+                if (_ultimoTicketRecibo != null) ...[
+                  SizedBox(height: 10),
+                  Text(
+                    "Recibo N°: $_ultimoTicketRecibo",
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                      color: Colors.green,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text("Cerrar"),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFF1A1B41),
+              ),
+              onPressed: () async {
+                if (_isPrinterConnected) {
+                  await _imprimirComprobante(
+                    _ultimoTicketMensaje!,
+                    _ultimoTicketNumero!,
+                    _ultimoTicketRecibo ?? '',
+                    _ultimoTicketData!['monto'] ??
+                        '0', // Pasar el monto guardado
+                  );
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Ticket reimpreso correctamente')),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('No hay impresora conectada')),
+                  );
+                }
+              },
+              child: Row(
+                mainAxisSize:
+                    MainAxisSize.min, // Para que el Row no ocupe todo el ancho
+                children: [
+                  Icon(Icons.print, color: Colors.white), // Icono de impresora
+                  SizedBox(width: 8), // Espacio entre el icono y el texto
+                  Text("Reimprimir", style: TextStyle(color: Colors.white)),
+                ],
+              ),
             ),
           ],
         );
@@ -1738,6 +1605,7 @@ class _HomeScreenState extends State<HomeScreen> {
     String mensaje,
     String ticket,
     String recibo,
+    String monto, // Nuevo parámetro para el monto
   ) async {
     try {
       BlueThermalPrinter bluetooth = BlueThermalPrinter.instance;
@@ -1756,12 +1624,12 @@ class _HomeScreenState extends State<HomeScreen> {
           0,
         );
         bluetooth.printCustom(
-          'Monto: ${_montoController.text} ${selectedMoneda ?? ''}',
+          'Monto: $monto ${selectedMoneda ?? ''}', // Usar el monto pasado como parámetro
           1,
           0,
         );
         bluetooth.printNewLine();
-        bluetooth.printCustom(mensaje.split('-')[0], 1, 0);
+        bluetooth.printCustom(mensaje, 1, 0);
         bluetooth.printNewLine();
         bluetooth.printCustom('Cobrador: ${widget.cobrador['nombre']}', 1, 0);
         bluetooth.printNewLine();
@@ -1783,7 +1651,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _novedadController.clear();
     _explicacionController.clear();
     setState(() {
-      _selectedImage = null;
+      // _selectedImage = null;
       _fotoMontoCero = null;
       _isMontoConfirmed = false;
       _mostrarFormularioMontoCero = false;
@@ -1799,6 +1667,9 @@ class _HomeScreenState extends State<HomeScreen> {
         break;
       case 'acerca_de':
         _mostrarAcercaDe();
+        break;
+      case 'ultimo_ticket':
+        _mostrarUltimoTicket();
         break;
     }
   }
@@ -1971,6 +1842,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const PopupMenuItem<String>(
+                    value: 'ultimo_ticket',
+                    child: ListTile(
+                      leading: Icon(Icons.receipt),
+                      title: Text('Último ticket'),
+                    ),
+                  ),
+                  const PopupMenuItem<String>(
                     value: 'acerca_de',
                     child: ListTile(
                       leading: Icon(Icons.info),
@@ -2089,7 +1967,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                 saldo = null;
                                 agencias = [];
                               });
-                              // Necesitarás modificar _fetchAgencias para aceptar String
                               _fetchAgencias(newValue);
                             }
                           },
@@ -2207,7 +2084,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
 
-                    // Mostrar saldo cuando esté disponible
                     if (selectedAgenciaId != null &&
                         nombreAgenciaSeleccionada != null)
                       if (selectedAgenciaId != null &&
@@ -2422,8 +2298,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             );
                           }
                         } else {
-                          // Ahora solo verificamos que el monto esté confirmado
-                          // El código de confirmación se verifica en el modal
                           if (_isMontoConfirmed) {
                             _enviarCobroConNovedad();
                           } else {

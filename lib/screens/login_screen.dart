@@ -63,11 +63,9 @@ class _LoginScreenState extends State<LoginScreen> {
       final uuid = await getOrCreateDeviceId();
       setState(() {
         _deviceId = uuid;
-        print("");
-        print('Device UUID: $_deviceId');
-        print('Device UUID: $_deviceId');
-        print('Device UUID: $_deviceId');
-        print("");
+        debugPrint("");
+        debugPrint('Device UUID: $_deviceId');
+        debugPrint("");
       });
     } catch (e) {
       setState(() {
@@ -193,16 +191,6 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // Fondo degradado
-          // Container(
-          //   decoration: BoxDecoration(
-          //     gradient: LinearGradient(
-          //       colors: [Color.fromARGB(168, 255, 174, 0), Color(0xFF1A1B41)],
-          //       begin: Alignment.topLeft,
-          //       end: Alignment.bottomRight,
-          //     ),
-          //   ),
-          // ),
           Container(
             decoration: BoxDecoration(
               image: DecorationImage(
