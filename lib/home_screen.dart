@@ -109,6 +109,23 @@ class _HomeScreenState extends State<HomeScreen> {
     selectedMoneda = widget.monedas[0];
   }
 
+  Color _getButtonColor() {
+    if (!_isMontoConfirmed) return Colors.grey;
+
+    final monto = double.tryParse(_montoController.text) ?? 0;
+    final isMontoCero = monto == 0;
+
+    if (isMontoCero) {
+      return (_fotoMontoCero != null && _explicacionController.text.isNotEmpty)
+          ? Color(0xFF1A1B41)
+          : Colors.grey;
+    } else {
+      // Ahora solo verificamos que el monto esté confirmado
+      // (el código se verifica en el modal)
+      return Color(0xFF1A1B41);
+    }
+  }
+
   void _mostrarModal(
     String? agencia,
     String zona,
@@ -116,99 +133,147 @@ class _HomeScreenState extends State<HomeScreen> {
     String deviceId,
     String fecha,
     String moneda,
-  ) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16.0),
-          ),
-          elevation: 8,
-          backgroundColor: Colors.white,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight:
-                  MediaQuery.of(context).size.height *
-                  0.8, // 80% de la altura de la pantalla
+  ) async {
+    if ((double.tryParse(monto) ?? 0) == 0) {
+      _mostrarModalMontoCero();
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      final codigoConfirmacion = await _insertarCobro();
+
+      if (codigoConfirmacion == null) {
+        throw Exception('No se pudo obtener código de confirmación');
+      } else {
+        debugPrint('Código secreto: ${codigoConfirmacion ?? "NULL"}');
+      }
+
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16.0),
             ),
-            child: SingleChildScrollView(
-              child: Container(
-                padding: EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Encabezado con icono
-                    Container(
-                      padding: EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Color(0xFF1A1B41).withOpacity(0.1),
-                        shape: BoxShape.circle,
+            elevation: 8,
+            backgroundColor: Colors.white,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.85,
+              ),
+              child: SingleChildScrollView(
+                child: Container(
+                  padding: EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Icono
+                      Container(
+                        padding: EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Color(0xFF1A1B41).withOpacity(0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.receipt_long,
+                          size: 32,
+                          color: Color(0xFF1A1B41),
+                        ),
                       ),
-                      child: Icon(
-                        Icons.receipt_long,
-                        size: 32,
-                        color: Color(0xFF1A1B41),
-                      ),
-                    ),
-                    SizedBox(height: 16),
+                      SizedBox(height: 16),
 
-                    // Título
-                    Text(
-                      "COMPROBANTE DE COBRO",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1A1B41),
+                      // Título
+                      Text(
+                        "COMPROBANTE DE COBRO",
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1A1B41),
+                        ),
                       ),
-                    ),
-                    SizedBox(height: 24),
+                      SizedBox(height: 24),
 
-                    // Datos en formato tabla
-                    _buildInfoRow("Agencia:", agencia ?? 'No especificada'),
-                    _buildInfoRow("Zona:", zona),
-                    SizedBox(height: 16),
+                      // Info
+                      _buildInfoRow("Agencia:", agencia ?? 'No especificada'),
+                      _buildInfoRow("Zona:", zona),
+                      SizedBox(height: 16),
 
-                    // Monto destacado
-                    Container(
-                      padding: EdgeInsets.symmetric(
-                        vertical: 12,
-                        horizontal: 24,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        children: [
-                          Text(
-                            "MONTO ABONADO",
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.green[700],
-                              fontWeight: FontWeight.w500,
+                      // Monto
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 24,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              "MONTO ABONADO",
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.green[700],
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            "$monto $selectedMoneda",
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green[700],
+                            SizedBox(height: 4),
+                            Text(
+                              "$monto $moneda",
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green[700],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    SizedBox(height: 16),
+                      SizedBox(height: 16),
 
-                    _buildInfoRow("Fecha:", fecha),
-                    _buildInfoRow("Cobrador:", widget.cobrador['nombre']),
-                    SizedBox(height: 24),
+                      _buildInfoRow("Fecha:", fecha),
+                      _buildInfoRow("Cobrador:", widget.cobrador['nombre']),
+                      SizedBox(height: 24),
 
-                    // Campo de novedad (si aplica)
-                    if (!_isMontoCero)
+                      // // Código de confirmación recibido
+                      // Text(
+                      //   'Código de confirmación:',
+                      //   style: TextStyle(fontSize: 16),
+                      // ),
+                      // SizedBox(height: 8),
+                      // Text(
+                      //   codigoConfirmacion,
+                      //   style: TextStyle(
+                      //     fontSize: 24,
+                      //     fontWeight: FontWeight.bold,
+                      //     color: Colors.green[700],
+                      //   ),
+                      // ),
+                      // SizedBox(height: 16),
+                      // Text(
+                      //   'Comparta este código con el cliente',
+                      //   textAlign: TextAlign.center,
+                      //   style: TextStyle(fontSize: 14),
+                      // ),
+                      // // Campo para que el cliente ingrese el código
+                      // SizedBox(height: 20),
+                      TextField(
+                        controller: _codigoController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: 'Ingrese el código recibido',
+                          border: OutlineInputBorder(),
+                        ),
+                        maxLength: 6,
+                      ),
+                      SizedBox(height: 16),
+
+                      // Campo novedad opcional
                       TextField(
                         controller: _novedadController,
                         maxLength: 160,
@@ -226,58 +291,76 @@ class _HomeScreenState extends State<HomeScreen> {
                           contentPadding: EdgeInsets.all(12),
                         ),
                       ),
-                    if (!_isMontoCero) SizedBox(height: 24),
+                      SizedBox(height: 24),
 
-                    // Botones de acción
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            style: OutlinedButton.styleFrom(
-                              padding: EdgeInsets.symmetric(vertical: 14),
-                              side: BorderSide(color: Color(0xFF1A1B41)),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
+                      // Botones
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                padding: EdgeInsets.symmetric(vertical: 14),
+                                side: BorderSide(color: Color(0xFF1A1B41)),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: Text(
+                                "Cancelar",
+                                style: TextStyle(color: Color(0xFF1A1B41)),
                               ),
                             ),
-                            onPressed: () => Navigator.of(context).pop(),
-                            child: Text(
-                              "Cancelar",
-                              style: TextStyle(color: Color(0xFF1A1B41)),
-                            ),
                           ),
-                        ),
-                        SizedBox(width: 16),
-                        Expanded(
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Color(0xFF1A1B41),
-                              padding: EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
+                          SizedBox(width: 16),
+                          Expanded(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Color(0xFF1A1B41),
+                                padding: EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              onPressed: () async {
+                                if (_codigoController.text.isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Ingrese el código'),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                Navigator.of(context).pop();
+                                await _enviarCobroConNovedad();
+                              },
+                              child: Text(
+                                "Confirmar",
+                                style: TextStyle(color: Colors.white),
                               ),
                             ),
-                            onPressed: () async {
-                              Navigator.of(context).pop();
-                              await _enviarCobroConNovedad();
-                            },
-                            child: Text(
-                              "Confirmar",
-                              style: TextStyle(color: Colors.white),
-                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-        );
-      },
-    );
+          );
+        },
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+    } finally {
+      setState(() {
+        _isSubmitting = false;
+      });
+    }
   }
 
   // Método auxiliar para construir filas de información
@@ -1154,6 +1237,113 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _procesarMontoCero() async {
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      // 1. Primero insertar el cobro
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token') ?? '';
+
+      // Insertar cobro (similar a _insertarCobro pero específico para monto cero)
+      final insertResponse = await http.post(
+        Uri.parse('${Config.apiUrl}insertarCobro'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'usuario': widget.usuario,
+          'db': widget.db,
+          'agencia': selectedAgenciaId.toString(),
+          'ubicacion': _location,
+          'banca': '0001',
+          'monto': '0', // Forzar monto cero
+          'proceso': 'enviado',
+          'moneda': selectedMoneda ?? 'COP',
+          'device': _deviceId,
+          'fecha': _fechaController.text,
+          'novedad':
+              _explicacionController.text, // Usar explicación como novedad
+        }),
+      );
+
+      final insertData = json.decode(insertResponse.body);
+      if (insertResponse.statusCode != 200 || insertData['e'] != 1) {
+        throw Exception(insertData['mensaje'] ?? 'Error al insertar cobro');
+      }
+
+      // 2. Enviar directamente con la foto
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('${Config.apiUrl}enviar'),
+      );
+
+      request.headers['Authorization'] = 'Bearer $token';
+      request.fields.addAll({
+        'usuario': widget.usuario,
+        'db': widget.db,
+        'agencia': selectedAgenciaId.toString(),
+        'ubicacion': _location,
+        'banca': '0001',
+        'monto': '0',
+        'codigo': '0', // Código cero o vacío para monto cero
+        'novedad': _explicacionController.text,
+        'ticket': insertData['ticket']?.toString() ?? '',
+      });
+
+      // Adjuntar la foto comprimida
+      var compressedImage = await _compressImage(_fotoMontoCero!);
+      var imageStream = http.ByteStream(compressedImage!.openRead());
+      var length = await compressedImage.length();
+
+      request.files.add(
+        http.MultipartFile(
+          'imagen',
+          imageStream,
+          length,
+          filename: 'comprobante_monto_cero.jpg',
+          contentType: MediaType('image', 'jpeg'),
+        ),
+      );
+
+      var sendResponse = await request.send();
+      final sendData = json.decode(await sendResponse.stream.bytesToString());
+
+      if (sendResponse.statusCode == 200 && sendData['e'] == 1) {
+        // Mostrar confirmación
+        _mostrarModalConfirmacion(
+          sendData['mensaje'],
+          sendData['ticket']?.toString() ?? 'N/A',
+          sendData['recibo']?.toString() ?? 'N/A',
+        );
+
+        // Imprimir si está conectado
+        if (_isPrinterConnected) {
+          await _imprimirComprobante(
+            sendData['mensaje'],
+            sendData['ticket']?.toString() ?? 'N/A',
+            sendData['recibo']?.toString() ?? 'N/A',
+          );
+        }
+
+        _resetFormulario();
+      } else {
+        throw Exception(sendData['mensaje'] ?? 'Error al enviar monto cero');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error en monto cero: $e')));
+    } finally {
+      setState(() {
+        _isSubmitting = false;
+      });
+    }
+  }
+
   void _mostrarModalMontoCero() {
     showDialog(
       context: context,
@@ -1163,189 +1353,160 @@ class _HomeScreenState extends State<HomeScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16.0),
           ),
-          elevation: 0,
-          backgroundColor: Colors.transparent,
-          child: Container(
-            padding: EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 10.0,
-                  offset: Offset(0.0, 10.0),
+          elevation: 8,
+          backgroundColor: Colors.white,
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  "Registro de Monto Cero",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1A1B41),
+                  ),
                 ),
-              ],
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.money_off, size: 60, color: Colors.orange),
-                  SizedBox(height: 16),
-                  Text(
-                    "Por favor, proporcione una foto y una descripción:",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 16, color: Colors.grey[700]),
-                  ),
-                  SizedBox(height: 20),
+                SizedBox(height: 16),
+                Text(
+                  "Para registrar un monto cero, es requerido adjuntar una foto y una explicación.",
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 20),
 
-                  // Foto
-                  _fotoMontoCero != null
-                      ? Column(
-                        children: [
-                          Container(
-                            height: 150,
-                            width: 150,
-                            decoration: BoxDecoration(
-                              border: Border.all(color: Colors.grey),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Image.file(
-                              _fotoMontoCero!,
-                              fit: BoxFit.cover,
-                            ),
-                          ),
-                          SizedBox(height: 10),
-                          TextButton(
-                            onPressed: _tomarFotoMontoCero,
-                            style: TextButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                side: BorderSide(
-                                  color: Color(0xFF1A1B41), // Color azul oscuro
-                                  width: 1,
-                                ),
-                              ),
-                              padding: EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 12,
-                              ),
-                            ),
-                            child: Text(
-                              "Cambiar foto",
-                              style: TextStyle(
-                                color: Color(0xFF1A1B41), // Color azul oscuro
-                              ),
-                            ),
-                          ),
-                        ],
-                      )
-                      : ElevatedButton.icon(
-                        onPressed: _tomarFotoMontoCero,
-                        icon: Icon(Icons.camera_alt, color: Colors.white),
-                        label: Text(
-                          "Tomar foto",
-                          style: TextStyle(color: Colors.white),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Color(
-                            0xFF6290C3,
-                          ), // Color azul claro de tu tema
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 12,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                      ),
-
-                  SizedBox(height: 20),
-
-                  // Campo de texto
-                  TextField(
-                    controller: _explicacionController,
-                    maxLength: 160,
-                    maxLines: 3,
-                    decoration: InputDecoration(
-                      labelText: "Descripción (requerido)",
-                      border: OutlineInputBorder(),
-                      hintText: "Describa por qué el monto es cero...",
+                // Campo para la foto
+                if (_fotoMontoCero == null)
+                  ElevatedButton(
+                    onPressed: _tomarFotoMontoCero,
+                    child: Text("Tomar Foto"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Color(0xFF1A1B41),
                     ),
-                  ),
-
-                  SizedBox(height: 20),
-
-                  // Botones
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  )
+                else
+                  Column(
                     children: [
-                      TextButton(
-                        style: TextButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            side: BorderSide(
-                              color: Color(0xFF1A1B41),
-                              width: 1,
-                            ),
-                          ),
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 12,
-                          ),
-                        ),
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          setState(() {
-                            _mostrarFormularioMontoCero = false;
-                          });
-                        },
-                        child: Text(
-                          "Cancelar",
-                          style: TextStyle(
-                            color: Color(0xFF1A1B41),
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                      Image.file(
+                        _fotoMontoCero!,
+                        height: 150,
+                        fit: BoxFit.cover,
                       ),
                       TextButton(
-                        style: TextButton.styleFrom(
-                          backgroundColor: Color(0xFF1A1B41),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 12,
-                          ),
-                        ),
-                        onPressed: () {
-                          if (_fotoMontoCero == null ||
-                              _explicacionController.text.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Foto y explicación son requeridas',
-                                ),
-                              ),
-                            );
-                            return;
-                          }
-                          Navigator.of(context).pop();
-                          _submitMonto();
-                        },
-                        child: Text(
-                          "Confirmar",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        onPressed: _tomarFotoMontoCero,
+                        child: Text("Cambiar Foto"),
                       ),
                     ],
                   ),
-                ],
-              ),
+
+                SizedBox(height: 20),
+
+                // Campo para la explicación
+                TextField(
+                  controller: _explicacionController,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    labelText: "Explicación*",
+                    hintText: "Explique por qué el monto es cero",
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                SizedBox(height: 24),
+
+                // Botones
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        setState(() {
+                          _mostrarFormularioMontoCero = false;
+                          _montoController.clear();
+                        });
+                      },
+                      child: Text("Cancelar"),
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                        if (_fotoMontoCero == null ||
+                            _explicacionController.text.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Foto y explicación son requeridas',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+                        Navigator.of(context).pop();
+                        _procesarMontoCero();
+                      },
+                      child: Text("Confirmar"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Color(0xFF1A1B41),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         );
       },
     );
+  }
+
+  Future<String?> _insertarCobro() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token') ?? '';
+
+      final response = await http.post(
+        Uri.parse('${Config.apiUrl}insertarCobro'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'usuario': widget.usuario,
+          'db': widget.db,
+          'agencia': selectedAgenciaId.toString(),
+          'ubicacion': _location,
+          'banca': '0001',
+          'monto': _montoController.text,
+          'proceso': 'enviado',
+          'moneda': selectedMoneda ?? 'COP',
+          'device': _deviceId,
+          'fecha': _fechaController.text,
+          'novedad': _novedadController.text,
+        }),
+      );
+
+      final data = json.decode(response.body);
+      if (response.statusCode == 200 && data['e'] == 1) {
+        // Extraer el código de confirmación del mensaje
+        final mensaje = data['data'] as String;
+        final regex = RegExp(r'código: (\d+)');
+        final match = regex.firstMatch(mensaje);
+
+        if (match != null) {
+          setState(() {
+            _numeroTicket = data['ticket']?.toString();
+          });
+          return match.group(1); // Retorna el código numérico
+        }
+        throw Exception('No se pudo extraer código de confirmación');
+      } else {
+        throw Exception(data['mensaje'] ?? 'Error al insertar cobro');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al insertar cobro: $e')));
+      return null;
+    }
   }
 
   Future<void> _tomarFotoMontoCero() async {
@@ -1371,27 +1532,6 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    final monto = double.tryParse(_montoController.text) ?? 0;
-
-    // Validación para montos distintos de cero
-    if (monto != 0 && _codigoController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ingrese el código de confirmación')),
-      );
-      return;
-    }
-
-    // Validación para monto cero
-    if (monto == 0 &&
-        (_fotoMontoCero == null || _explicacionController.text.isEmpty)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Foto y explicación son requeridas para monto cero'),
-        ),
-      );
-      return;
-    }
-
     setState(() {
       _isSubmitting = true;
     });
@@ -1402,12 +1542,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('${Config.apiUrl}insertarCobro'),
+        Uri.parse('${Config.apiUrl}enviar'),
       );
 
       request.headers['Authorization'] = 'Bearer $token';
 
-      // Campos comunes
+      // Campos comunes para todos los montos
       request.fields.addAll({
         'usuario': widget.usuario,
         'db': widget.db,
@@ -1415,17 +1555,14 @@ class _HomeScreenState extends State<HomeScreen> {
         'ubicacion': _location,
         'banca': '0001',
         'monto': _montoController.text,
-        'proceso': 'enviado',
-        'moneda': selectedMoneda ?? 'COP',
-        'device': _deviceId,
-        'fecha': _fechaController.text,
+        'codigo': _codigoController.text,
         'novedad': _novedadController.text,
-        'codigo': monto != 0 ? _codigoController.text : '',
-        'ticket': '',
+        'ticket': _numeroTicket ?? '',
       });
 
-      // Adjuntar imagen solo para monto cero
-      if (monto == 0 && _fotoMontoCero != null) {
+      // Solo adjuntar imagen para monto cero
+      if ((double.tryParse(_montoController.text) ?? 0) == 0 &&
+          _fotoMontoCero != null) {
         var compressedImage = await _compressImage(_fotoMontoCero!);
         var imageStream = http.ByteStream(compressedImage!.openRead());
         var length = await compressedImage.length();
@@ -1446,11 +1583,21 @@ class _HomeScreenState extends State<HomeScreen> {
       final data = json.decode(responseData);
 
       if (response.statusCode == 200 && data['e'] == 1) {
-        setState(() {
-          _numeroTicket = data['ticket'].toString();
-        });
+        // Mostrar confirmación e imprimir
+        _mostrarModalConfirmacion(
+          data['mensaje'],
+          data['ticket']?.toString() ?? 'N/A',
+          data['recibo']?.toString() ?? 'N/A',
+        );
 
-        _mostrarModalConfirmacion(data['data'], _numeroTicket ?? 'N/A');
+        if (_isPrinterConnected) {
+          await _imprimirComprobante(
+            data['mensaje'],
+            data['ticket']?.toString() ?? 'N/A',
+            data['recibo']?.toString() ?? '',
+          );
+        }
+
         _resetFormulario();
       } else {
         throw Exception(data['mensaje'] ?? 'Error en el servidor');
@@ -1466,7 +1613,80 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _mostrarModalConfirmacion(String mensaje, String ticket) {
+  Future<void> _enviarMontoCero() async {
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token') ?? '';
+
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('${Config.apiUrl}enviar'),
+      );
+
+      request.headers['Authorization'] = 'Bearer $token';
+
+      // Agregar campos específicos para monto cero
+      request.fields.addAll({
+        'usuario': widget.usuario,
+        'db': widget.db,
+        'agencia': selectedAgenciaId.toString(),
+        'ubicacion': _location,
+        'banca': '0001',
+        'monto': '0', // Forzamos monto cero
+        'codigo': '', // No requerido para monto cero
+        'novedad':
+            _explicacionController.text, // Usamos la explicación como novedad
+        'ticket': _numeroTicket ?? '',
+      });
+
+      // Agregar la imagen comprimida
+      var compressedImage = await _compressImage(_fotoMontoCero!);
+      var imageStream = http.ByteStream(compressedImage!.openRead());
+      var length = await compressedImage.length();
+
+      request.files.add(
+        http.MultipartFile(
+          'imagen',
+          imageStream,
+          length,
+          filename: 'comprobante_monto_cero.jpg',
+          contentType: MediaType('image', 'jpeg'),
+        ),
+      );
+
+      var response = await request.send();
+      final responseData = await response.stream.bytesToString();
+      final data = json.decode(responseData);
+
+      if (response.statusCode == 200 && data['e'] == 1) {
+        setState(() {
+          _numeroTicket = data['ticket'].toString();
+        });
+        _mostrarModalConfirmacion(
+          data['mensaje'],
+          data['ticket']?.toString() ?? 'N/A',
+          data['recibo']?.toString() ?? 'N/A',
+        );
+        _resetFormulario();
+      } else {
+        throw Exception(data['mensaje'] ?? 'Error en el servidor');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al enviar monto cero: $e')));
+    } finally {
+      setState(() {
+        _isSubmitting = false;
+      });
+    }
+  }
+
+  void _mostrarModalConfirmacion(String mensaje, String ticket, String recibo) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -1486,6 +1706,15 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: Colors.blue,
                   ),
                 ),
+                SizedBox(height: 10),
+                Text(
+                  "Recibo N°: $recibo",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                    color: Colors.green,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1494,7 +1723,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () {
                 Navigator.of(context).pop();
                 if (_isPrinterConnected) {
-                  _imprimirComprobante(mensaje, ticket);
+                  _imprimirComprobante(mensaje, ticket, recibo);
                 }
               },
               child: Text("CERRAR"),
@@ -1505,17 +1734,22 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _imprimirComprobante(String mensaje, String ticket) async {
+  Future<void> _imprimirComprobante(
+    String mensaje,
+    String ticket,
+    String recibo,
+  ) async {
     try {
       BlueThermalPrinter bluetooth = BlueThermalPrinter.instance;
 
       if (await bluetooth.isConnected ?? false) {
         bluetooth.printNewLine();
-        bluetooth.printCustom('COMPROBANTE DE COBRO', 2, 1);
+        bluetooth.printCustom('COMPROBANTE DE COBRO', 1, 1);
         bluetooth.printNewLine();
         bluetooth.printCustom('---------------------', 1, 1);
+        bluetooth.printCustom('Recibo: $recibo', 1, 0);
         bluetooth.printCustom('Ticket: $ticket', 1, 0);
-        bluetooth.printCustom('Fecha: ${_fechaController.text}', 1, 0);
+        bluetooth.printCustom('Fecha Cierre: ${_fechaController.text}', 1, 0);
         bluetooth.printCustom(
           'Agencia: ${nombreAgenciaSeleccionada ?? ''}',
           1,
@@ -1542,6 +1776,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // En el método _resetFormulario:
   void _resetFormulario() {
     _montoController.clear();
     _codigoController.clear();
@@ -1553,6 +1788,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _isMontoConfirmed = false;
       _mostrarFormularioMontoCero = false;
       _isMontoCero = false;
+      _numeroTicket = null;
     });
   }
 
@@ -1678,6 +1914,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isMontoConfirmed && _isMontoCero && !_mostrarFormularioMontoCero) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _mostrarModalMontoCero();
+      });
+    }
+
     return Scaffold(
       backgroundColor: Colors.white, // Cambia el fondo a blanco
 
@@ -2132,85 +2374,71 @@ class _HomeScreenState extends State<HomeScreen> {
                       _isMontoConfirmed = value ?? false;
                     });
 
-                    if (_isMontoConfirmed && !_isMontoCero) {
-                      _mostrarModal(
-                        nombreAgenciaSeleccionada,
-                        selectedZonaId.toString(),
-                        _montoController.text,
-                        _deviceId,
-                        _fechaController.text,
-                        "",
-                      );
+                    // Mostrar modal tanto para montos cero como no cero
+                    if (_isMontoConfirmed) {
+                      if (_isMontoCero) {
+                        _mostrarModalMontoCero();
+                      } else {
+                        _mostrarModal(
+                          nombreAgenciaSeleccionada,
+                          selectedZonaId.toString(),
+                          _montoController.text,
+                          _deviceId,
+                          _fechaController.text,
+                          "",
+                        );
+                      }
                     }
                   },
                   controlAffinity: ListTileControlAffinity.leading,
                 ),
-
-                if (_isMontoConfirmed && !_isMontoCero) ...[
-                  SizedBox(height: 10),
-                  TextField(
-                    controller: _codigoController,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: 'Código de confirmación',
-                      labelStyle: TextStyle(
-                        color: Colors.blueGrey,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      hintText: 'Introduce el código recibido',
-                      prefixIcon: Icon(Icons.verified, color: Colors.blue),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(
-                          color: Colors.grey.shade300,
-                          width: 2,
-                        ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(color: Colors.blue, width: 2),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(
-                          color: Colors.grey.shade300,
-                          width: 2,
-                        ),
-                      ),
-                      contentPadding: EdgeInsets.symmetric(
-                        vertical: 18,
-                        horizontal: 16,
-                      ),
-                    ),
-                  ),
-                ],
               ],
             ),
 
             SizedBox(height: 10),
 
             Row(
-              mainAxisAlignment:
-                  MainAxisAlignment
-                      .spaceEvenly, // Espaciado uniforme entre los botones
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                // Enviar
                 _isSubmitting
                     ? CircularProgressIndicator()
                     : ElevatedButton.icon(
-                      onPressed:
-                          (_isMontoConfirmed &&
-                                  (_isMontoCero ||
-                                      _codigoController.text.isNotEmpty))
-                              ? _enviarCobroConNovedad
-                              : null,
+                      onPressed: () {
+                        final monto =
+                            double.tryParse(_montoController.text) ?? 0;
+                        final isMontoCero = monto == 0;
+
+                        if (isMontoCero) {
+                          if (_fotoMontoCero != null &&
+                              _explicacionController.text.isNotEmpty) {
+                            _enviarCobroConNovedad();
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Para monto cero, se requieren foto y explicación',
+                                ),
+                              ),
+                            );
+                          }
+                        } else {
+                          // Ahora solo verificamos que el monto esté confirmado
+                          // El código de confirmación se verifica en el modal
+                          if (_isMontoConfirmed) {
+                            _enviarCobroConNovedad();
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Por favor confirme el monto primero',
+                                ),
+                              ),
+                            );
+                          }
+                        }
+                      },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            (_isMontoConfirmed &&
-                                    (_isMontoCero ||
-                                        _codigoController.text.isNotEmpty))
-                                ? Color(0xFF1A1B41)
-                                : Colors.grey,
+                        backgroundColor: _getButtonColor(),
                         padding: EdgeInsets.symmetric(
                           horizontal: 80,
                           vertical: 12,
@@ -2227,6 +2455,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
               ],
             ),
+
             SizedBox(height: 30),
           ],
         ),
