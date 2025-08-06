@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
@@ -82,6 +83,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _ultimoTicketMensaje;
   String? _ultimoTicketNumero;
   String? _ultimoTicketRecibo;
+  String? _ubicacionAgenciaActual;
 
   @override
   void initState() {
@@ -92,6 +94,63 @@ class _HomeScreenState extends State<HomeScreen> {
     _checkBluetoothConnection();
     _setDefaultDate();
     _monedasList();
+  }
+
+  Future<void> _abrirGoogleMaps(String ubicacion) async {
+    try {
+      // 1. Validación básica
+      if (ubicacion.isEmpty || ubicacion == '0') {
+        throw Exception('Ubicación no válida');
+      }
+
+      // 2. Limpieza de coordenadas
+      final coords =
+          ubicacion
+              .split(',')
+              .map((s) => s.trim())
+              .where((s) => s.isNotEmpty)
+              .toList();
+
+      if (coords.length != 2) throw Exception('Formato debe ser "lat, lng"');
+
+      // 3. Conversión a números
+      final lat = double.tryParse(coords[0]);
+      final lng = double.tryParse(coords[1]);
+
+      if (lat == null || lng == null) {
+        throw Exception('Coordenadas deben ser números');
+      }
+
+      // 4. Validación de rangos
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        throw Exception(
+          'Coordenadas fuera de rango (lat: -90 a 90, lng: -180 a 180)',
+        );
+      }
+
+      // 5. Construcción de URL
+      final url = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+      );
+
+      // 6. Lanzamiento con fallback
+      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+        // Fallback a versión web si falla la app
+        await launchUrl(
+          Uri.parse('https://www.google.com/maps?q=$lat,$lng'),
+          mode: LaunchMode.externalApplication,
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo abrir el mapa: ${e.toString()}'),
+          duration: Duration(seconds: 3),
+          backgroundColor: Colors.red,
+        ),
+      );
+      debugPrint('Error Google Maps: $e\nUbicación recibida: "$ubicacion"');
+    }
   }
 
   Future<void> _checkBluetoothConnection() async {
@@ -763,23 +822,31 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() {
             saldo = (agenciaData['acobrar']);
             nombreAgenciaSeleccionada = agenciaData['nombre']?.toString();
+            _ubicacionAgenciaActual = agenciaData['ubicacion']?.toString();
+            debugPrint(
+              'Ubicación agencia ${agenciaData['codigo']}: ${_ubicacionAgenciaActual}',
+            );
+
+            // Guardar siempre la ubicación si existe
+            if (agenciaData['ubicacion'] != null) {
+              _ultimoTicketData ??= {};
+              _ultimoTicketData!['ubicacionAgencia'] =
+                  agenciaData['ubicacion'].toString();
+            }
           });
 
           // Manejar los diferentes estados de ubicación
           final estadoUbicacion = data['ubicacion'] ?? 0;
+          final ubicacionAgencia = agenciaData['ubicacion']?.toString() ?? '0';
 
-          switch (estadoUbicacion) {
-            case 0:
-              _mostrarDialogoActualizarUbicacion(codigoAgencia);
-              break;
-            case 1:
-              // Ubicación válida, continuar normalmente
-              break;
-            case 2:
-              _mostrarDialogoUbicacionNoCoincide();
-              break;
-            default:
-              break;
+          // Mostrar diálogo si:
+          // 1. El estado de ubicación es 0 (no registrada)
+          // 2. O si la ubicación actual es "0" (string)
+          if (estadoUbicacion == 0 || ubicacionAgencia == '0') {
+            _mostrarDialogoActualizarUbicacion(codigoAgencia);
+          } else if (estadoUbicacion == 2) {
+            // Mostrar advertencia si la ubicación no coincide
+            _mostrarDialogoUbicacionNoCoincide();
           }
         } else {
           throw Exception('No se encontraron datos de saldo para esta agencia');
@@ -971,9 +1038,13 @@ class _HomeScreenState extends State<HomeScreen> {
       final data = json.decode(response.body);
 
       if (response.statusCode == 200 && data['e'] == 1) {
+        setState(() {
+          _ubicacionAgenciaActual = _location;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Ubicación actualizada correctamente')),
         );
+        await _fetchSaldoAgencia(codigoAgencia);
       } else {
         throw Exception(data['mensaje'] ?? 'Error al actualizar la ubicación');
       }
@@ -2092,42 +2163,114 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     if (selectedAgenciaId != null &&
                         nombreAgenciaSeleccionada != null)
-                      if (selectedAgenciaId != null &&
-                          nombreAgenciaSeleccionada != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 12.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Center(
-                                child: Text(
-                                  nombreAgenciaSeleccionada!,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Center(
+                              child: Text(
+                                nombreAgenciaSeleccionada!,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              SizedBox(height: 10),
-                              isLoadingSaldo
-                                  ? CircularProgressIndicator()
-                                  : Center(
-                                    child: Text(
-                                      saldo != null
-                                          ? 'Saldo: $selectedMoneda ${saldo!}'
-                                          : 'No se pudo obtener el saldo',
-                                      style: TextStyle(
-                                        fontSize: 26,
-                                        color: _getSaldoColor(
-                                          selectedAgenciaId,
+                            ),
+                            SizedBox(height: 10),
+                            isLoadingSaldo
+                                ? CircularProgressIndicator()
+                                : Column(
+                                  children: [
+                                    Center(
+                                      child: Text(
+                                        saldo != null
+                                            ? 'Saldo: $selectedMoneda ${saldo!}'
+                                            : 'No se pudo obtener el saldo',
+                                        style: TextStyle(
+                                          fontSize: 26,
+                                          color: _getSaldoColor(
+                                            selectedAgenciaId,
+                                          ),
+                                          fontWeight: FontWeight.bold,
                                         ),
-                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                  ),
-                            ],
-                          ),
+                                    SizedBox(height: 10),
+
+                                    // Botón de Google Maps - Versión definitiva
+                                    Visibility(
+                                      visible:
+                                          _ubicacionAgenciaActual !=
+                                          null, // Siempre visible si hay dato
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(
+                                          top: 8.0,
+                                        ),
+                                        child: ElevatedButton.icon(
+                                          onPressed: () {
+                                            if (_ubicacionAgenciaActual ==
+                                                    null ||
+                                                _ubicacionAgenciaActual ==
+                                                    '0') {
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    'Esta agencia no tiene ubicación registrada',
+                                                    style: TextStyle(
+                                                      color: Colors.white,
+                                                    ),
+                                                  ),
+                                                  backgroundColor:
+                                                      Colors.orange,
+                                                ),
+                                              );
+                                            } else {
+                                              _abrirGoogleMaps(
+                                                _ubicacionAgenciaActual!,
+                                              );
+                                            }
+                                          },
+                                          icon: Icon(
+                                            _ubicacionAgenciaActual == null ||
+                                                    _ubicacionAgenciaActual ==
+                                                        '0'
+                                                ? Icons.location_off
+                                                : Icons.map,
+                                            size: 20,
+                                          ),
+                                          label: Text(
+                                            _ubicacionAgenciaActual == null ||
+                                                    _ubicacionAgenciaActual ==
+                                                        '0'
+                                                ? 'Sin ubicación registrada'
+                                                : 'Ver en Google Maps',
+                                          ),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor:
+                                                _ubicacionAgenciaActual ==
+                                                            null ||
+                                                        _ubicacionAgenciaActual ==
+                                                            '0'
+                                                    ? Colors.grey[600]
+                                                    : Color(0xFF1A1B41),
+                                            foregroundColor: Colors.white,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              // padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                          ],
                         ),
+                      ),
                   ],
                 ),
               ),
