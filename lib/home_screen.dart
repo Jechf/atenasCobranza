@@ -1212,9 +1212,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (_fotoMontoCero == null)
                   ElevatedButton(
                     onPressed: _tomarFotoMontoCero,
-                    child: Text("Tomar Foto"),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Color(0xFF1A1B41),
+                    ),
+                    child: Text(
+                      "Tomar Foto",
+                      style: TextStyle(color: Colors.white),
                     ),
                   )
                 else
@@ -1276,9 +1279,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         Navigator.of(context).pop();
                         _procesarMontoCero();
                       },
-                      child: Text("Confirmar"),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Color(0xFF1A1B41),
+                      ),
+                      child: Text(
+                        "Confirmar",
+                        style: TextStyle(color: Colors.white),
                       ),
                     ),
                   ],
