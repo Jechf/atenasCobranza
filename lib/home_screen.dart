@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import './screens/agencies_map_screen.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:image_picker/image_picker.dart';
@@ -1737,7 +1738,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _handleMenuSelection(String value) {
+  void _handleMenuSelection(String value) async {
     switch (value) {
       case 'configurar_impresora':
         _showBluetoothConnectionDialog();
@@ -1747,6 +1748,23 @@ class _HomeScreenState extends State<HomeScreen> {
         break;
       case 'ultimo_ticket':
         _mostrarUltimoTicket();
+        break;
+      case 'ver_mapa':
+        if (selectedZonaId == null || agencias.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Seleccione una zona con agencias primero'),
+            ),
+          );
+          return;
+        }
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => AgenciesMapScreen(agencies: agencias),
+          ),
+        );
         break;
     }
   }
@@ -1902,15 +1920,12 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         actions: [
-          // Botón de menú se mantiene igual
           PopupMenuButton<String>(
             surfaceTintColor: Colors.white,
-            icon: Icon(Icons.more_vert, color: Colors.white),
-            onSelected: (String result) {
-              _handleMenuSelection(result);
-            },
+            icon: const Icon(Icons.more_vert, color: Colors.white),
+            onSelected: _handleMenuSelection,
             itemBuilder:
-                (BuildContext context) => <PopupMenuEntry<String>>[
+                (BuildContext context) => [
                   const PopupMenuItem<String>(
                     value: 'configurar_impresora',
                     child: ListTile(
@@ -1923,6 +1938,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: ListTile(
                       leading: Icon(Icons.receipt),
                       title: Text('Último ticket'),
+                    ),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'ver_mapa',
+                    enabled: selectedZonaId != null && agencias.isNotEmpty,
+                    child: const ListTile(
+                      leading: Icon(Icons.map),
+                      title: Text('Ver mapa de agencias'),
                     ),
                   ),
                   const PopupMenuItem<String>(
