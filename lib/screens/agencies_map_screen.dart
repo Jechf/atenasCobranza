@@ -61,15 +61,53 @@ class _AgenciesMapScreenState extends State<AgenciesMapScreen> {
 
   LatLng? _parseLocation(String location) {
     try {
+      // Validar que no esté vacío y no sea "0"
+      if (location.isEmpty || location == '0' || location == '0,0') {
+        return null;
+      }
+
+      // Validar formato completo (debe tener coma)
+      if (!location.contains(',')) {
+        debugPrint('Formato inválido: falta coma en ubicación: $location');
+        return null;
+      }
+
       final parts = location.split(',');
-      if (parts.length != 2) return null;
+
+      // Validar que tenga exactamente 2 partes
+      if (parts.length != 2) {
+        debugPrint(
+          'Formato inválido: debe tener lat y lng separados por coma: $location',
+        );
+        return null;
+      }
 
       final lat = double.tryParse(parts[0].trim());
       final lng = double.tryParse(parts[1].trim());
 
-      return (lat != null && lng != null) ? LatLng(lat, lng) : null;
+      // Validar que ambos sean números válidos
+      if (lat == null || lng == null) {
+        debugPrint(
+          'Coordenadas no numéricas: lat=$lat, lng=$lng en: $location',
+        );
+        return null;
+      }
+
+      // Validar rangos geográficos
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        debugPrint('Coordenadas fuera de rango: lat=$lat, lng=$lng');
+        return null;
+      }
+
+      // Validar que no sean coordenadas (0,0) - usualmente indica error
+      if (lat == 0 && lng == 0) {
+        debugPrint('Coordenadas (0,0) - probablemente error: $location');
+        return null;
+      }
+
+      return LatLng(lat, lng);
     } catch (e) {
-      debugPrint('Error parsing location: $e');
+      debugPrint('Error parsing location: $e - Ubicación: $location');
       return null;
     }
   }
