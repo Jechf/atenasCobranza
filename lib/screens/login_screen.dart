@@ -3,6 +3,7 @@ import '../config.dart';
 import '../home_screen.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -114,6 +115,17 @@ class _LoginScreenState extends State<LoginScreen> {
         _location = 'Error al obtener la ubicación';
       });
     }
+  }
+
+  // Función para copiar el device ID al portapapeles
+  Future<void> _copyDeviceIdToClipboard() async {
+    await Clipboard.setData(ClipboardData(text: _deviceId));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Device ID copiado al portapapeles'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   Future<void> _login() async {
@@ -286,15 +298,39 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: TextStyle(color: Colors.red),
                         ),
                       ),
-                    SizedBox(height: 10),
-                    Text(
-                      'ID del dispositivo: $_deviceId',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    SizedBox(height: 12),
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'ID: $_deviceId',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                Icons.content_copy,
+                                size: 16,
+                                color: Color.fromARGB(224, 26, 27, 65),
+                              ),
+                              onPressed: _copyDeviceIdToClipboard,
+                              tooltip: 'Copiar Device ID',
+                              padding: EdgeInsets.zero,
+                              constraints: BoxConstraints(),
+                              iconSize: 16,
+                            ),
+                            Text("Copiar ID"),
+                          ],
+                        ),
+                      ],
                     ),
                     // Text(
                     //   'Ubicación: $_location',
                     //   style: TextStyle(fontSize: 12, color: Colors.grey),
                     // ),
+                    SizedBox(height: 8),
                     Text(
                       'V.1.0.0',
                       style: TextStyle(fontSize: 12, color: Colors.grey),
