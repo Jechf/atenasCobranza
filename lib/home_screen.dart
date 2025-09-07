@@ -32,14 +32,14 @@ Future<String> getOrCreateDeviceId() async {
 
 class HomeScreen extends StatefulWidget {
   final Map<String, dynamic> cobrador;
-  final List<dynamic> monedas;
+  final List<dynamic> moneda;
   final String usuario;
   final String db;
 
   const HomeScreen({
     super.key,
     required this.cobrador,
-    required this.monedas,
+    required this.moneda,
     required this.usuario,
     required this.db,
   });
@@ -168,7 +168,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _monedasList() {
-    selectedMoneda = widget.monedas[0];
+    selectedMoneda = widget.moneda[0];
   }
 
   Color _getButtonColor() {
@@ -698,7 +698,6 @@ class _HomeScreenState extends State<HomeScreen> {
       debugPrint('🔵 Iniciando solicitud de agencias...');
       debugPrint('URL: ${Config.apiUrl}listarAgencias');
 
-      // Crear el cuerpo de la solicitud según el formato requerido
       final requestBody = {
         "usuario": widget.usuario,
         "db": widget.db,
@@ -707,8 +706,8 @@ class _HomeScreenState extends State<HomeScreen> {
         ).format(DateTime.now()), // Formato YYYYMMDD
         "tipo": "todas",
         "mostrar": "saldo",
-        "zona": zonaId, // Usamos el código de zona recibido
-        "banca": "0001",
+        "zona": zonaId,
+        "ban": "0001",
       };
 
       debugPrint(
@@ -800,7 +799,7 @@ class _HomeScreenState extends State<HomeScreen> {
         "tipo": "todas",
         "mostrar": "saldo",
         "agencia": codigoAgencia,
-        "banca": "0001",
+        "ban": "0001",
         "ubicacion": _location,
       };
 
@@ -1022,7 +1021,7 @@ class _HomeScreenState extends State<HomeScreen> {
         "db": widget.db,
         "agencia": codigoAgencia,
         "ubicacion": _location,
-        "banca": "0001",
+        "ban": "0001",
       };
 
       final response = await http
@@ -1156,7 +1155,7 @@ class _HomeScreenState extends State<HomeScreen> {
           'db': widget.db,
           'agencia': selectedAgenciaId.toString(),
           'ubicacion': _location,
-          'banca': '0001',
+          'ban': '0001',
           'monto': '0',
           'proceso': 'enviado',
           'moneda': selectedMoneda ?? 'COP',
@@ -1193,7 +1192,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'db': widget.db,
         'agencia': selectedAgenciaId.toString(),
         'ubicacion': _location,
-        'banca': '0001',
+        'ban': '0001',
         'monto': '0',
         'codigo': codigoConfirmacion, // Usar el código obtenido
         'novedad': _explicacionController.text,
@@ -1385,7 +1384,7 @@ class _HomeScreenState extends State<HomeScreen> {
           'db': widget.db,
           'agencia': selectedAgenciaId.toString(),
           'ubicacion': _location,
-          'banca': '0001',
+          'ban': '0001',
           'monto': _montoController.text,
           'proceso': 'enviado',
           'moneda': selectedMoneda ?? 'COP',
@@ -1464,7 +1463,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'db': widget.db,
         'agencia': selectedAgenciaId.toString(),
         'ubicacion': _location,
-        'banca': '0001',
+        'ban': '0001',
         'monto': _montoController.text,
         'codigo': _codigoController.text,
         'novedad': _novedadController.text,
@@ -1998,7 +1997,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           value: selectedMoneda,
                           isExpanded: true,
                           items:
-                              widget.monedas.map<DropdownMenuItem<String>>((
+                              widget.moneda.map<DropdownMenuItem<String>>((
                                 moneda,
                               ) {
                                 return DropdownMenuItem<String>(

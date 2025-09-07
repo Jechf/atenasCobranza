@@ -40,7 +40,7 @@ class _LoginScreenState extends State<LoginScreen> {
   String _deviceId = '';
   String _location = '';
 
-  List<dynamic> monedas = [];
+  List<dynamic> moneda = [];
 
   @override
   void initState() {
@@ -156,7 +156,7 @@ class _LoginScreenState extends State<LoginScreen> {
           'token': data['data']?['cedula'] ?? '',
         };
 
-        monedas = List<dynamic>.from(data['data']?['monedas'] ?? []);
+        moneda = List<dynamic>.from(data['data']?['moneda'] ?? []);
 
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('cobradorId', cobrador['id']);
@@ -175,7 +175,7 @@ class _LoginScreenState extends State<LoginScreen> {
               builder:
                   (context) => HomeScreen(
                     cobrador: cobrador,
-                    monedas: monedas,
+                    moneda: moneda,
                     usuario: usuario,
                     db: db,
                   ),
@@ -306,6 +306,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           'ID: $_deviceId',
                           style: TextStyle(fontSize: 12, color: Colors.grey),
                         ),
+
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
