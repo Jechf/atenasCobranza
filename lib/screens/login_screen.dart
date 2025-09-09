@@ -118,15 +118,15 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // Función para copiar el device ID al portapapeles
-  Future<void> _copyDeviceIdToClipboard() async {
-    await Clipboard.setData(ClipboardData(text: _deviceId));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Device ID copiado al portapapeles'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
+  // Future<void> _copyDeviceIdToClipboard() async {
+  //   await Clipboard.setData(ClipboardData(text: _deviceId));
+  //   ScaffoldMessenger.of(context).showSnackBar(
+  //     SnackBar(
+  //       content: Text('Device ID copiado al portapapeles'),
+  //       duration: Duration(seconds: 2),
+  //     ),
+  //   );
+  // }
 
   Future<void> _login() async {
     setState(() {
@@ -303,34 +303,11 @@ class _LoginScreenState extends State<LoginScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          'ID: $_deviceId',
+                          'ID: ${_deviceId.length >= 6 ? _deviceId.substring(_deviceId.length - 6) : _deviceId}',
                           style: TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
-
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            IconButton(
-                              icon: Icon(
-                                Icons.content_copy,
-                                size: 16,
-                                color: Color.fromARGB(224, 26, 27, 65),
-                              ),
-                              onPressed: _copyDeviceIdToClipboard,
-                              tooltip: 'Copiar Device ID',
-                              padding: EdgeInsets.zero,
-                              constraints: BoxConstraints(),
-                              iconSize: 16,
-                            ),
-                            Text("Copiar ID"),
-                          ],
                         ),
                       ],
                     ),
-                    // Text(
-                    //   'Ubicación: $_location',
-                    //   style: TextStyle(fontSize: 12, color: Colors.grey),
-                    // ),
                     SizedBox(height: 8),
                     Text(
                       'V.1.0.0',
