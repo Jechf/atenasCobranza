@@ -2,6 +2,7 @@ import 'dart:convert';
 import '../config.dart';
 import '../home_screen.dart';
 import 'package:uuid/uuid.dart';
+import '../session_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -36,6 +37,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoading = false;
+  bool _rememberMe = false;
   String _errorMessage = '';
   String _deviceId = '';
   String _location = '';
@@ -47,6 +49,38 @@ class _LoginScreenState extends State<LoginScreen> {
     super.initState();
     _requestPermissions();
     _initializeDeviceAndLocation();
+    _loadSavedCredentials();
+  }
+
+  // Cargar credenciales guardadas
+  Future<void> _loadSavedCredentials() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedUsername = prefs.getString('saved_username');
+      final rememberMe = prefs.getBool('remember_me') ?? false;
+
+      if (savedUsername != null && rememberMe) {
+        setState(() {
+          _usernameController.text = savedUsername;
+          _rememberMe = rememberMe;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading saved credentials: $e');
+    }
+  }
+
+  // Guardar o eliminar credenciales según la opción "Recordar usuario"
+  Future<void> _saveOrRemoveCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    if (_rememberMe) {
+      await prefs.setString('saved_username', _usernameController.text);
+      await prefs.setBool('remember_me', true);
+    } else {
+      await prefs.remove('saved_username');
+      await prefs.setBool('remember_me', false);
+    }
   }
 
   Future<void> _requestPermissions() async {
@@ -117,22 +151,14 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // Función para copiar el device ID al portapapeles
-  // Future<void> _copyDeviceIdToClipboard() async {
-  //   await Clipboard.setData(ClipboardData(text: _deviceId));
-  //   ScaffoldMessenger.of(context).showSnackBar(
-  //     SnackBar(
-  //       content: Text('Device ID copiado al portapapeles'),
-  //       duration: Duration(seconds: 2),
-  //     ),
-  //   );
-  // }
-
   Future<void> _login() async {
     setState(() {
       _isLoading = true;
       _errorMessage = '';
     });
+
+    // Guardar o eliminar credenciales según la preferencia
+    await _saveOrRemoveCredentials();
 
     final body = json.encode({
       'usuario': _usernameController.text,
@@ -164,9 +190,17 @@ class _LoginScreenState extends State<LoginScreen> {
         await prefs.setString('cedula', cobrador['token']);
         await prefs.setString('usuario', data['usuario']);
         await prefs.setString('db', data['db']);
+        await prefs.setString('banca', data['banca']);
+
+        debugPrint('Banca: ${data['banca']}');
+
+        // Inicializar y registrar la sesión
+        await SessionManager().initialize();
+        await SessionManager().registerUserInteraction();
 
         final usuario = prefs.getString('usuario') ?? '';
         final db = prefs.getString('db') ?? '';
+        final banca = prefs.getString('banca') ?? '';
 
         if (mounted) {
           Navigator.pushReplacement(
@@ -178,6 +212,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     moneda: moneda,
                     usuario: usuario,
                     db: db,
+                    banca: banca,
                   ),
             ),
           );
@@ -270,7 +305,22 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       obscureText: true,
                     ),
-                    SizedBox(height: 20),
+                    SizedBox(height: 10),
+                    // Checkbox para recordar usuario
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: _rememberMe,
+                          onChanged: (bool? value) {
+                            setState(() {
+                              _rememberMe = value ?? false;
+                            });
+                          },
+                        ),
+                        Text('Recordar usuario'),
+                      ],
+                    ),
+                    SizedBox(height: 10),
                     _isLoading
                         ? CircularProgressIndicator()
                         : ElevatedButton(

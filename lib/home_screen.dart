@@ -16,6 +16,10 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 
+// Agregar importación del SessionManager y LoginScreen
+import 'session_manager.dart';
+import '/screens/login_screen.dart';
+
 Future<String> getOrCreateDeviceId() async {
   final prefs = await SharedPreferences.getInstance();
   const key = 'unique_device_id';
@@ -35,6 +39,7 @@ class HomeScreen extends StatefulWidget {
   final List<dynamic> moneda;
   final String usuario;
   final String db;
+  final String banca;
 
   const HomeScreen({
     super.key,
@@ -42,6 +47,7 @@ class HomeScreen extends StatefulWidget {
     required this.moneda,
     required this.usuario,
     required this.db,
+    required this.banca,
   });
 
   @override
@@ -49,7 +55,7 @@ class HomeScreen extends StatefulWidget {
   _HomeScreenState createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<dynamic> zonas = [];
   List<dynamic> agencias = [];
 
@@ -86,15 +92,134 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _ultimoTicketRecibo;
   String? _ubicacionAgenciaActual;
 
+  // Variables para gestión de inactividad
+  Timer? _inactivityTimer;
+  Timer? _sessionCheckTimer;
+  final Duration _sessionTimeout = Duration(minutes: 10);
+  DateTime _lastInteractionTime = DateTime.now();
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _requestPermissions();
     _initializeDeviceAndLocation();
     _fetchZonas();
     _checkBluetoothConnection();
     _setDefaultDate();
     _monedasList();
+
+    // Inicializar el gestor de sesión y registrar interacción inicial
+    SessionManager().initialize().then((_) {
+      SessionManager().registerUserInteraction();
+    });
+
+    // Iniciar timers para verificación de inactividad
+    _startInactivityTimer();
+    _startSessionCheckTimer();
+  }
+
+  @override
+  void dispose() {
+    // Cancelar timers y remover observer
+    _inactivityTimer?.cancel();
+    _sessionCheckTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _novedadController.dispose();
+    _montoController.dispose();
+    _fechaController.dispose();
+    _explicacionController.dispose();
+    _codigoController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Cuando la app vuelve a primer plano, verificar si la sesión expiró
+      _checkSessionExpiry();
+    }
+  }
+
+  // Iniciar timer de inactividad
+  void _startInactivityTimer() {
+    _inactivityTimer = Timer.periodic(Duration(seconds: 30), (timer) {
+      final now = DateTime.now();
+      final difference = now.difference(_lastInteractionTime);
+
+      if (difference > _sessionTimeout) {
+        _logoutDueToInactivity();
+      }
+    });
+  }
+
+  // Iniciar timer para verificación periódica de sesión
+  void _startSessionCheckTimer() {
+    _sessionCheckTimer = Timer.periodic(Duration(seconds: 30), (timer) {
+      _checkSessionExpiry();
+    });
+  }
+
+  // Verificar si la sesión ha expirado
+  Future<void> _checkSessionExpiry() async {
+    if (SessionManager().isSessionExpired()) {
+      _logoutDueToInactivity();
+    } else {
+      // Actualizar la interacción si la app está activa
+      await SessionManager().registerUserInteraction();
+    }
+  }
+
+  // Registrar interacción del usuario
+  void _registerUserInteraction([_]) {
+    _lastInteractionTime = DateTime.now();
+    SessionManager().registerUserInteraction();
+  }
+
+  // Cerrar sesión por inactividad
+  void _logoutDueToInactivity() {
+    _inactivityTimer?.cancel();
+    _sessionCheckTimer?.cancel();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Sesión Expirada'),
+          content: Text(
+            'Su sesión ha expirado por inactividad. Por favor, inicie sesión nuevamente.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Aceptar'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                _logout();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Cerrar sesión
+  Future<void> _logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('cobradorId');
+    await prefs.remove('nombre');
+    await prefs.remove('cedula');
+    await prefs.remove('usuario');
+    await prefs.remove('db');
+    await prefs.remove('banca');
+
+    await SessionManager().forceLogout();
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => LoginScreen()),
+    );
   }
 
   Future<void> _abrirGoogleMaps(String ubicacion) async {
@@ -503,7 +628,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final uuid = await getOrCreateDeviceId();
       setState(() {
         _deviceId = uuid;
-        debugPrint('UUID persistente desde Home: $_deviceId');
+        debugPrint('UUID persistente: $_deviceId');
       });
     } catch (e) {
       setState(() {
@@ -621,7 +746,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'Headers: ${{'Authorization': 'Bearer $token', 'Content-Type': 'application/json'}}',
       );
       debugPrint(
-        'Body: ${jsonEncode({'usuario': widget.usuario, 'db': widget.db})}',
+        'Body: ${jsonEncode({'usuario': widget.usuario, 'db': widget.db, 'banca': widget.banca})}',
       );
 
       final response = await http.post(
@@ -630,7 +755,11 @@ class _HomeScreenState extends State<HomeScreen> {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
-        body: jsonEncode({'usuario': widget.usuario, 'db': widget.db}),
+        body: jsonEncode({
+          'usuario': widget.usuario,
+          'db': widget.db,
+          'banca': widget.banca,
+        }),
       );
 
       debugPrint('══════════════════════════════════════════════════');
@@ -1737,6 +1866,15 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  String _getRemainingTimeString() {
+    final remainingSeconds = SessionManager().getRemainingTime();
+    if (remainingSeconds <= 0) return '00:00';
+
+    final minutes = (remainingSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (remainingSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
   void _handleMenuSelection(String value) async {
     switch (value) {
       case 'configurar_impresora':
@@ -1764,6 +1902,9 @@ class _HomeScreenState extends State<HomeScreen> {
             builder: (context) => AgenciesMapScreen(agencies: agencias),
           ),
         );
+        break;
+      case 'cerrar_sesion':
+        _logout();
         break;
     }
   }
@@ -1885,636 +2026,659 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     }
 
-    return Scaffold(
-      backgroundColor: Colors.white, // Cambia el fondo a blanco
-
-      appBar: AppBar(
-        centerTitle: true, // Centra el título (y nuestro logo)
-        title: Row(
-          mainAxisSize:
-              MainAxisSize.max, // Para que el Row no ocupe todo el ancho
-          children: [
-            Image.asset(
-              'assets/icon/logo.png',
-              height: 30, // Ajusta según necesites
-              fit: BoxFit.contain,
+    return Listener(
+      onPointerDown: _registerUserInteraction,
+      onPointerMove: _registerUserInteraction,
+      onPointerUp: _registerUserInteraction,
+      child: GestureDetector(
+        onTap: _registerUserInteraction,
+        onPanDown: _registerUserInteraction,
+        child: Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            centerTitle: true,
+            title: Row(
+              mainAxisSize: MainAxisSize.max,
+              children: [
+                Image.asset(
+                  'assets/icon/logo.png',
+                  height: 30,
+                  fit: BoxFit.contain,
+                ),
+                SizedBox(width: 15),
+                Text(
+                  'Cobranza',
+                  style: TextStyle(color: Colors.white, fontSize: 20),
+                ),
+              ],
             ),
-            SizedBox(width: 15), // Espacio entre logo y texto
-            Text(
-              'Cobranza',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 20, // Puedes ajustar el tamaño
-              ),
-            ),
-          ],
-        ),
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color.fromARGB(168, 255, 174, 0), Color(0xFF1A1B41)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-        ),
-        actions: [
-          PopupMenuButton<String>(
-            surfaceTintColor: Colors.white,
-            icon: const Icon(Icons.more_vert, color: Colors.white),
-            onSelected: _handleMenuSelection,
-            itemBuilder:
-                (BuildContext context) => [
-                  const PopupMenuItem<String>(
-                    value: 'configurar_impresora',
-                    child: ListTile(
-                      leading: Icon(Icons.print),
-                      title: Text('Configurar impresora'),
-                    ),
-                  ),
-                  const PopupMenuItem<String>(
-                    value: 'ultimo_ticket',
-                    child: ListTile(
-                      leading: Icon(Icons.receipt),
-                      title: Text('Último ticket'),
-                    ),
-                  ),
-                  PopupMenuItem<String>(
-                    value: 'ver_mapa',
-                    enabled: selectedZonaId != null && agencias.isNotEmpty,
-                    child: const ListTile(
-                      leading: Icon(Icons.map),
-                      title: Text('Ver mapa de agencias'),
-                    ),
-                  ),
-                  const PopupMenuItem<String>(
-                    value: 'acerca_de',
-                    child: ListTile(
-                      leading: Icon(Icons.info),
-                      title: Text('Acerca de'),
-                    ),
-                  ),
-                ],
-          ),
-        ],
-      ),
-
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              '${widget.cobrador['nombre']}'.toUpperCase(),
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: 10),
-            Card(
-              color: Colors.white,
-              elevation: 3, // Sombra más fuerte
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(
-                  16,
-                ), // Bordes más redondeados
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.grey.shade400),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          hint: Text("Selecciona una moneda"),
-                          value: selectedMoneda,
-                          isExpanded: true,
-                          items:
-                              widget.moneda.map<DropdownMenuItem<String>>((
-                                moneda,
-                              ) {
-                                return DropdownMenuItem<String>(
-                                  value: moneda,
-                                  child: Text(
-                                    moneda.toUpperCase(),
-                                  ), // Mostrar la moneda en mayúsculas
-                                );
-                              }).toList(),
-                          onChanged: (String? newValue) {
-                            setState(() {
-                              selectedMoneda = newValue;
-                            });
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
+            flexibleSpace: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color.fromARGB(168, 255, 174, 0), Color(0xFF1A1B41)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
               ),
             ),
-
-            SizedBox(height: 10), // Mayor espacio arriba
-            // Zona Dropdown
-            Card(
-              color: Colors.white,
-              elevation: 3, // Sombra más fuerte
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(
-                  16,
-                ), // Bordes más redondeados
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.grey.shade400),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          // Cambiado de DropdownButton<int> a DropdownButton<String>
-                          hint: Text("Selecciona una zona"),
-                          value:
-                              selectedZonaId
-                                  ?.toString(), // Asegúrate de que selectedZonaId sea String
-                          isExpanded: true,
-                          items:
-                              zonas.map<DropdownMenuItem<String>>((zona) {
-                                return DropdownMenuItem<String>(
-                                  value: zona['codigo'].toString(),
-                                  child: Text(zona['nombre'] ?? 'Sin nombre'),
-                                );
-                              }).toList(),
-                          onChanged: (String? newValue) {
-                            if (newValue != null) {
-                              setState(() {
-                                selectedZonaId =
-                                    newValue; // Ahora manejamos el código como String
-                                selectedAgenciaId = null;
-                                saldo = null;
-                                agencias = [];
-                              });
-                              _fetchAgencias(newValue);
-                            }
-                          },
+            actions: [
+              PopupMenuButton<String>(
+                surfaceTintColor: Colors.white,
+                icon: const Icon(Icons.more_vert, color: Colors.white),
+                onSelected: _handleMenuSelection,
+                itemBuilder:
+                    (BuildContext context) => [
+                      const PopupMenuItem<String>(
+                        value: 'configurar_impresora',
+                        child: ListTile(
+                          leading: Icon(Icons.print),
+                          title: Text('Configurar impresora'),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            SizedBox(height: 10),
-
-            // Agencia Dropdown
-            Card(
-              color: Colors.white,
-              elevation: 3,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Dropdown de Agencias
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.grey.shade400),
+                      const PopupMenuItem<String>(
+                        value: 'ultimo_ticket',
+                        child: ListTile(
+                          leading: Icon(Icons.receipt),
+                          title: Text('Último ticket'),
+                        ),
                       ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          hint: Text(
-                            "Selecciona una agencia",
-                            style: TextStyle(color: Colors.grey.shade600),
+                      PopupMenuItem<String>(
+                        value: 'ver_mapa',
+                        enabled: selectedZonaId != null && agencias.isNotEmpty,
+                        child: const ListTile(
+                          leading: Icon(Icons.map),
+                          title: Text('Ver mapa de agencias'),
+                        ),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'acerca_de',
+                        child: ListTile(
+                          leading: Icon(Icons.info),
+                          title: Text('Acerca de'),
+                        ),
+                      ),
+                      // Agregar opción de cerrar sesión
+                      PopupMenuItem<String>(
+                        value: 'cerrar_sesion',
+                        child: const ListTile(
+                          leading: Icon(Icons.logout, color: Colors.red),
+                          title: Text(
+                            'Cerrar sesión',
+                            style: TextStyle(color: Colors.red),
                           ),
-                          value: selectedAgenciaId,
-                          isExpanded: true,
-                          items:
-                              agencias.map<DropdownMenuItem<String>>((agencia) {
-                                final isCobrar = agencia['estado'] == true;
-                                final nombre =
-                                    agencia['nombre']?.toString() ??
-                                    'Sin nombre';
-                                final codigo =
-                                    agencia['codigo']?.toString() ?? '';
+                        ),
+                      ),
+                    ],
+              ),
+            ],
+          ),
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  '${widget.cobrador['nombre']}'.toUpperCase(),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 10),
+                Card(
+                  color: Colors.white,
+                  elevation: 3, // Sombra más fuerte
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(
+                      16,
+                    ), // Bordes más redondeados
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.grey.shade400),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              hint: Text("Selecciona una moneda"),
+                              value: selectedMoneda,
+                              isExpanded: true,
+                              items:
+                                  widget.moneda.map<DropdownMenuItem<String>>((
+                                    moneda,
+                                  ) {
+                                    return DropdownMenuItem<String>(
+                                      value: moneda,
+                                      child: Text(
+                                        moneda.toUpperCase(),
+                                      ), // Mostrar la moneda en mayúsculas
+                                    );
+                                  }).toList(),
+                              onChanged: (String? newValue) {
+                                setState(() {
+                                  selectedMoneda = newValue;
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
 
-                                return DropdownMenuItem<String>(
-                                  value: codigo,
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        isCobrar
-                                            ? Icons.arrow_circle_up
-                                            : Icons.arrow_circle_down,
-                                        color:
-                                            isCobrar
-                                                ? Colors.green
-                                                : Colors.red,
-                                        size: 20,
+                SizedBox(height: 10), // Mayor espacio arriba
+                // Zona Dropdown
+                Card(
+                  color: Colors.white,
+                  elevation: 3, // Sombra más fuerte
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(
+                      16,
+                    ), // Bordes más redondeados
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.grey.shade400),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              // Cambiado de DropdownButton<int> a DropdownButton<String>
+                              hint: Text("Selecciona una zona"),
+                              value:
+                                  selectedZonaId
+                                      ?.toString(), // Asegúrate de que selectedZonaId sea String
+                              isExpanded: true,
+                              items:
+                                  zonas.map<DropdownMenuItem<String>>((zona) {
+                                    return DropdownMenuItem<String>(
+                                      value: zona['codigo'].toString(),
+                                      child: Text(
+                                        zona['nombre'] ?? 'Sin nombre',
                                       ),
-                                      SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          nombre,
-                                          style: TextStyle(
-                                            fontSize: 16,
+                                    );
+                                  }).toList(),
+                              onChanged: (String? newValue) {
+                                if (newValue != null) {
+                                  setState(() {
+                                    selectedZonaId =
+                                        newValue; // Ahora manejamos el código como String
+                                    selectedAgenciaId = null;
+                                    saldo = null;
+                                    agencias = [];
+                                  });
+                                  _fetchAgencias(newValue);
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                SizedBox(height: 10),
+
+                // Agencia Dropdown
+                Card(
+                  color: Colors.white,
+                  elevation: 3,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Dropdown de Agencias
+                        Container(
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.grey.shade400),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              hint: Text(
+                                "Selecciona una agencia",
+                                style: TextStyle(color: Colors.grey.shade600),
+                              ),
+                              value: selectedAgenciaId,
+                              isExpanded: true,
+                              items:
+                                  agencias.map<DropdownMenuItem<String>>((
+                                    agencia,
+                                  ) {
+                                    final isCobrar = agencia['estado'] == true;
+                                    final nombre =
+                                        agencia['nombre']?.toString() ??
+                                        'Sin nombre';
+                                    final codigo =
+                                        agencia['codigo']?.toString() ?? '';
+
+                                    return DropdownMenuItem<String>(
+                                      value: codigo,
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            isCobrar
+                                                ? Icons.arrow_circle_up
+                                                : Icons.arrow_circle_down,
                                             color:
                                                 isCobrar
                                                     ? Colors.green
                                                     : Colors.red,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }).toList(),
-                          onChanged: (String? newValue) async {
-                            if (newValue == null) {
-                              setState(() {
-                                selectedAgenciaId = null;
-                                saldo = null;
-                                nombreAgenciaSeleccionada = null;
-                              });
-                              return;
-                            }
-
-                            try {
-                              setState(() {
-                                selectedAgenciaId = newValue;
-                                saldo = null; // Resetear mientras se carga
-                                isLoadingSaldo = true;
-                              });
-
-                              await _fetchSaldoAgencia(newValue);
-                            } catch (e) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Error al cargar saldo: $e'),
-                                ),
-                              );
-                            } finally {
-                              setState(() {
-                                isLoadingSaldo = false;
-                              });
-                            }
-                          },
-                        ),
-                      ),
-                    ),
-
-                    if (selectedAgenciaId != null &&
-                        nombreAgenciaSeleccionada != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Center(
-                              child: Text(
-                                nombreAgenciaSeleccionada!,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            SizedBox(height: 10),
-                            isLoadingSaldo
-                                ? CircularProgressIndicator()
-                                : Column(
-                                  children: [
-                                    Center(
-                                      child: Text(
-                                        saldo != null
-                                            ? 'Saldo: $selectedMoneda ${saldo!}'
-                                            : 'No se pudo obtener el saldo',
-                                        style: TextStyle(
-                                          fontSize: 26,
-                                          color: _getSaldoColor(
-                                            selectedAgenciaId,
-                                          ),
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                    SizedBox(height: 10),
-
-                                    // Botón de Google Maps - Versión definitiva
-                                    Visibility(
-                                      visible:
-                                          _ubicacionAgenciaActual !=
-                                          null, // Siempre visible si hay dato
-                                      child: Padding(
-                                        padding: const EdgeInsets.only(
-                                          top: 8.0,
-                                        ),
-                                        child: ElevatedButton.icon(
-                                          onPressed: () {
-                                            if (_ubicacionAgenciaActual ==
-                                                    null ||
-                                                _ubicacionAgenciaActual ==
-                                                    '0') {
-                                              ScaffoldMessenger.of(
-                                                context,
-                                              ).showSnackBar(
-                                                SnackBar(
-                                                  content: Text(
-                                                    'Esta agencia no tiene ubicación registrada',
-                                                    style: TextStyle(
-                                                      color: Colors.white,
-                                                    ),
-                                                  ),
-                                                  backgroundColor:
-                                                      Colors.orange,
-                                                ),
-                                              );
-                                            } else {
-                                              _abrirGoogleMaps(
-                                                _ubicacionAgenciaActual!,
-                                              );
-                                            }
-                                          },
-                                          icon: Icon(
-                                            _ubicacionAgenciaActual == null ||
-                                                    _ubicacionAgenciaActual ==
-                                                        '0'
-                                                ? Icons.location_off
-                                                : Icons.map,
                                             size: 20,
                                           ),
-                                          label: Text(
-                                            _ubicacionAgenciaActual == null ||
-                                                    _ubicacionAgenciaActual ==
-                                                        '0'
-                                                ? 'Sin ubicación registrada'
-                                                : 'Ver en Google Maps',
+                                          SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(
+                                              nombre,
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                color:
+                                                    isCobrar
+                                                        ? Colors.green
+                                                        : Colors.red,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
                                           ),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor:
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                              onChanged: (String? newValue) async {
+                                if (newValue == null) {
+                                  setState(() {
+                                    selectedAgenciaId = null;
+                                    saldo = null;
+                                    nombreAgenciaSeleccionada = null;
+                                  });
+                                  return;
+                                }
+
+                                try {
+                                  setState(() {
+                                    selectedAgenciaId = newValue;
+                                    saldo = null; // Resetear mientras se carga
+                                    isLoadingSaldo = true;
+                                  });
+
+                                  await _fetchSaldoAgencia(newValue);
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Error al cargar saldo: $e',
+                                      ),
+                                    ),
+                                  );
+                                } finally {
+                                  setState(() {
+                                    isLoadingSaldo = false;
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+
+                        if (selectedAgenciaId != null &&
+                            nombreAgenciaSeleccionada != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Center(
+                                  child: Text(
+                                    nombreAgenciaSeleccionada!,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(height: 10),
+                                isLoadingSaldo
+                                    ? CircularProgressIndicator()
+                                    : Column(
+                                      children: [
+                                        Center(
+                                          child: Text(
+                                            saldo != null
+                                                ? 'Saldo: $selectedMoneda ${saldo!}'
+                                                : 'No se pudo obtener el saldo',
+                                            style: TextStyle(
+                                              fontSize: 26,
+                                              color: _getSaldoColor(
+                                                selectedAgenciaId,
+                                              ),
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(height: 10),
+
+                                        // Botón de Google Maps - Versión definitiva
+                                        Visibility(
+                                          visible:
+                                              _ubicacionAgenciaActual !=
+                                              null, // Siempre visible si hay dato
+                                          child: Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 8.0,
+                                            ),
+                                            child: ElevatedButton.icon(
+                                              onPressed: () {
+                                                if (_ubicacionAgenciaActual ==
+                                                        null ||
+                                                    _ubicacionAgenciaActual ==
+                                                        '0') {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        'Esta agencia no tiene ubicación registrada',
+                                                        style: TextStyle(
+                                                          color: Colors.white,
+                                                        ),
+                                                      ),
+                                                      backgroundColor:
+                                                          Colors.orange,
+                                                    ),
+                                                  );
+                                                } else {
+                                                  _abrirGoogleMaps(
+                                                    _ubicacionAgenciaActual!,
+                                                  );
+                                                }
+                                              },
+                                              icon: Icon(
                                                 _ubicacionAgenciaActual ==
                                                             null ||
                                                         _ubicacionAgenciaActual ==
                                                             '0'
-                                                    ? Colors.grey[600]
-                                                    : Color(0xFF1A1B41),
-                                            foregroundColor: Colors.white,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              // padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                                    ? Icons.location_off
+                                                    : Icons.map,
+                                                size: 20,
+                                              ),
+                                              label: Text(
+                                                _ubicacionAgenciaActual ==
+                                                            null ||
+                                                        _ubicacionAgenciaActual ==
+                                                            '0'
+                                                    ? 'Sin ubicación registrada'
+                                                    : 'Ver en Google Maps',
+                                              ),
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor:
+                                                    _ubicacionAgenciaActual ==
+                                                                null ||
+                                                            _ubicacionAgenciaActual ==
+                                                                '0'
+                                                        ? Colors.grey[600]
+                                                        : Color(0xFF1A1B41),
+                                                foregroundColor: Colors.white,
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  // padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                                ),
+                                              ),
                                             ),
                                           ),
                                         ),
-                                      ),
+                                      ],
                                     ),
-                                  ],
-                                ),
-                          ],
-                        ),
-                      ),
-                  ],
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ),
 
-            SizedBox(height: 20),
+                SizedBox(height: 20),
 
-            // Fecha
-            TextField(
-              controller: _fechaController,
-              decoration: InputDecoration(
-                labelText: 'Fecha de Cobro',
-                labelStyle: TextStyle(
-                  color: Colors.blueGrey, // Color del texto de la etiqueta
-                  fontWeight:
-                      FontWeight.w600, // Peso de fuente para mayor énfasis
-                ),
-                hintText:
-                    'Selecciona una fecha', // Texto de sugerencia en el campo
-                hintStyle: TextStyle(
-                  color:
-                      Colors
-                          .grey[500], // Color gris para el texto de sugerencia
-                ),
-                prefixIcon: Icon(
-                  Icons.calendar_today,
-                  color: Colors.blue,
-                ), // Ícono de calendario
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10), // Bordes redondeados
-                  borderSide: BorderSide(
-                    color: Colors.grey.shade300,
-                    width: 2,
-                  ), // Color del borde
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(
-                    color: Colors.grey.shade300,
-                    width: 2,
-                  ), // Borde al recibir el foco
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(
-                    color: Colors.grey.shade200,
-                    width: 2,
-                  ), // Borde cuando está habilitado
-                ),
-                contentPadding: EdgeInsets.symmetric(
-                  vertical: 18,
-                  horizontal: 16,
-                ),
-              ),
-              readOnly: true,
-              onTap: () => _selectDate(context),
-            ),
-
-            SizedBox(height: 20),
-
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+                // Fecha
                 TextField(
-                  controller: _montoController,
-                  keyboardType: TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (value) {
-                    final monto = double.tryParse(value) ?? 0;
-                    setState(() {
-                      _isMontoCero = monto == 0 && value.isNotEmpty;
-                      _mostrarFormularioMontoCero = _isMontoCero;
-                    });
-
-                    if (_isMontoCero) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        _mostrarModalMontoCero();
-                      });
-                    }
-                  },
+                  controller: _fechaController,
                   decoration: InputDecoration(
-                    labelText: 'Monto recibido',
+                    labelText: 'Fecha de Cobro',
                     labelStyle: TextStyle(
-                      color: Colors.blueGrey,
-                      fontWeight: FontWeight.w600,
+                      color: Colors.blueGrey, // Color del texto de la etiqueta
+                      fontWeight:
+                          FontWeight.w600, // Peso de fuente para mayor énfasis
                     ),
-                    hintText: 'Introduce el monto',
+                    hintText:
+                        'Selecciona una fecha', // Texto de sugerencia en el campo
+                    hintStyle: TextStyle(
+                      color:
+                          Colors
+                              .grey[500], // Color gris para el texto de sugerencia
+                    ),
                     prefixIcon: Icon(
-                      Icons.attach_money,
-                      color: Colors.lightGreen,
-                    ),
+                      Icons.calendar_today,
+                      color: Colors.blue,
+                    ), // Ícono de calendario
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(
+                        10,
+                      ), // Bordes redondeados
                       borderSide: BorderSide(
                         color: Colors.grey.shade300,
                         width: 2,
-                      ),
+                      ), // Color del borde
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide(
-                        color: Colors.lightGreen,
+                        color: Colors.grey.shade300,
                         width: 2,
-                      ),
+                      ), // Borde al recibir el foco
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide(
-                        color: Colors.grey.shade300,
+                        color: Colors.grey.shade200,
                         width: 2,
-                      ),
+                      ), // Borde cuando está habilitado
                     ),
                     contentPadding: EdgeInsets.symmetric(
                       vertical: 18,
                       horizontal: 16,
                     ),
                   ),
+                  readOnly: true,
+                  onTap: () => _selectDate(context),
                 ),
-                SizedBox(height: 10),
-                CheckboxListTile(
-                  checkColor: Colors.white,
-                  activeColor: Color(0xFF6290C3),
-                  title: Text("Confirmar monto"),
-                  value: _isMontoConfirmed,
-                  onChanged: (bool? value) {
-                    setState(() {
-                      _isMontoConfirmed = value ?? false;
-                    });
 
-                    // Mostrar modal tanto para montos cero como no cero
-                    if (_isMontoConfirmed) {
-                      if (_isMontoCero) {
-                        _mostrarModalMontoCero();
-                      } else {
-                        _mostrarModal(
-                          nombreAgenciaSeleccionada,
-                          selectedZonaId.toString(),
-                          _montoController.text,
-                          _deviceId,
-                          _fechaController.text,
-                          "",
-                        );
-                      }
-                    }
-                  },
-                  controlAffinity: ListTileControlAffinity.leading,
-                ),
-              ],
-            ),
+                SizedBox(height: 20),
 
-            SizedBox(height: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: _montoController,
+                      keyboardType: TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      onChanged: (value) {
+                        final monto = double.tryParse(value) ?? 0;
+                        setState(() {
+                          _isMontoCero = monto == 0 && value.isNotEmpty;
+                          _mostrarFormularioMontoCero = _isMontoCero;
+                        });
 
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _isSubmitting
-                    ? CircularProgressIndicator()
-                    : ElevatedButton.icon(
-                      onPressed: () {
-                        final monto =
-                            double.tryParse(_montoController.text) ?? 0;
-                        final isMontoCero = monto == 0;
+                        if (_isMontoCero) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            _mostrarModalMontoCero();
+                          });
+                        }
+                      },
+                      decoration: InputDecoration(
+                        labelText: 'Monto recibido',
+                        labelStyle: TextStyle(
+                          color: Colors.blueGrey,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        hintText: 'Introduce el monto',
+                        prefixIcon: Icon(
+                          Icons.attach_money,
+                          color: Colors.lightGreen,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(
+                            color: Colors.grey.shade300,
+                            width: 2,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(
+                            color: Colors.lightGreen,
+                            width: 2,
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(
+                            color: Colors.grey.shade300,
+                            width: 2,
+                          ),
+                        ),
+                        contentPadding: EdgeInsets.symmetric(
+                          vertical: 18,
+                          horizontal: 16,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 10),
+                    CheckboxListTile(
+                      checkColor: Colors.white,
+                      activeColor: Color(0xFF6290C3),
+                      title: Text("Confirmar monto"),
+                      value: _isMontoConfirmed,
+                      onChanged: (bool? value) {
+                        setState(() {
+                          _isMontoConfirmed = value ?? false;
+                        });
 
-                        if (isMontoCero) {
-                          if (_fotoMontoCero != null &&
-                              _explicacionController.text.isNotEmpty) {
-                            _enviarCobroConNovedad();
+                        // Mostrar modal tanto para montos cero como no cero
+                        if (_isMontoConfirmed) {
+                          if (_isMontoCero) {
+                            _mostrarModalMontoCero();
                           } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Para monto cero, se requieren foto y explicación',
-                                ),
-                              ),
-                            );
-                          }
-                        } else {
-                          if (_isMontoConfirmed) {
-                            _enviarCobroConNovedad();
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Por favor confirme el monto primero',
-                                ),
-                              ),
+                            _mostrarModal(
+                              nombreAgenciaSeleccionada,
+                              selectedZonaId.toString(),
+                              _montoController.text,
+                              _deviceId,
+                              _fechaController.text,
+                              "",
                             );
                           }
                         }
                       },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _getButtonColor(),
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 80,
-                          vertical: 12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      icon: Icon(Icons.send, color: Colors.white),
-                      label: Text(
-                        'Enviar',
-                        style: TextStyle(color: Colors.white),
-                      ),
+                      controlAffinity: ListTileControlAffinity.leading,
                     ),
+                  ],
+                ),
+
+                SizedBox(height: 10),
+
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _isSubmitting
+                        ? CircularProgressIndicator()
+                        : ElevatedButton.icon(
+                          onPressed: () {
+                            final monto =
+                                double.tryParse(_montoController.text) ?? 0;
+                            final isMontoCero = monto == 0;
+
+                            if (isMontoCero) {
+                              if (_fotoMontoCero != null &&
+                                  _explicacionController.text.isNotEmpty) {
+                                _enviarCobroConNovedad();
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Para monto cero, se requieren foto y explicación',
+                                    ),
+                                  ),
+                                );
+                              }
+                            } else {
+                              if (_isMontoConfirmed) {
+                                _enviarCobroConNovedad();
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Por favor confirme el monto primero',
+                                    ),
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _getButtonColor(),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 80,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          icon: Icon(Icons.send, color: Colors.white),
+                          label: Text(
+                            'Enviar',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ),
+                  ],
+                ),
+
+                SizedBox(height: 10),
+                Padding(
+                  padding: const EdgeInsets.only(top: 10.0),
+                  child: Text(
+                    'Sesión activa - Tiempo restante: ${_getRemainingTimeString()}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ),
               ],
             ),
-
-            SizedBox(height: 30),
-          ],
+          ),
         ),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _novedadController.dispose();
-    _montoController.dispose();
-    _fechaController.dispose();
-    _explicacionController.dispose();
-    _codigoController.dispose();
-    super.dispose();
   }
 }
