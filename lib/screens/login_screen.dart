@@ -190,9 +190,13 @@ class _LoginScreenState extends State<LoginScreen> {
         await prefs.setString('cedula', cobrador['token']);
         await prefs.setString('usuario', data['usuario']);
         await prefs.setString('db', data['db']);
-        await prefs.setString('banca', data['banca']);
 
-        debugPrint('Banca: ${data['banca']}');
+        final String bancaFromResponse = data['data']['banca'].toString();
+        if (bancaFromResponse != null) {
+          await prefs.setString('banca', bancaFromResponse);
+        }
+
+        debugPrint('Banca guardada: $bancaFromResponse');
 
         // Inicializar y registrar la sesión
         await SessionManager().initialize();
@@ -200,7 +204,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
         final usuario = prefs.getString('usuario') ?? '';
         final db = prefs.getString('db') ?? '';
-        final banca = prefs.getString('banca') ?? '';
+        final banca = prefs.getString('banca');
 
         if (mounted) {
           Navigator.pushReplacement(

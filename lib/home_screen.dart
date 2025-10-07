@@ -2,8 +2,10 @@ import 'dart:io';
 import 'dart:async';
 import 'config.dart';
 import 'dart:convert';
+import 'session_manager.dart';
 import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
+import '/screens/login_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import './screens/agencies_map_screen.dart';
@@ -15,10 +17,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
-
-// Agregar importación del SessionManager y LoginScreen
-import 'session_manager.dart';
-import '/screens/login_screen.dart';
 
 Future<String> getOrCreateDeviceId() async {
   final prefs = await SharedPreferences.getInstance();
@@ -39,7 +37,7 @@ class HomeScreen extends StatefulWidget {
   final List<dynamic> moneda;
   final String usuario;
   final String db;
-  final String banca;
+  final String? banca;
 
   const HomeScreen({
     super.key,
@@ -92,7 +90,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String? _ultimoTicketRecibo;
   String? _ubicacionAgenciaActual;
 
-  // Variables para gestión de inactividad
   Timer? _inactivityTimer;
   Timer? _sessionCheckTimer;
   final Duration _sessionTimeout = Duration(minutes: 10);
@@ -133,10 +130,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  // Cuando la app vuelve a primer plano, verificar si la sesión expiró
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Cuando la app vuelve a primer plano, verificar si la sesión expiró
       _checkSessionExpiry();
     }
   }
@@ -746,7 +743,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         'Headers: ${{'Authorization': 'Bearer $token', 'Content-Type': 'application/json'}}',
       );
       debugPrint(
-        'Body: ${jsonEncode({'usuario': widget.usuario, 'db': widget.db, 'banca': widget.banca})}',
+        'Body: ${jsonEncode({'usuario': widget.usuario, 'db': widget.db})}',
+        // 'banca': widget.banca
       );
 
       final response = await http.post(
@@ -758,7 +756,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         body: jsonEncode({
           'usuario': widget.usuario,
           'db': widget.db,
-          'banca': widget.banca,
+          // 'banca': widget.banca,
         }),
       );
 
