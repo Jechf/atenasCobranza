@@ -214,6 +214,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await SessionManager().forceLogout();
 
     Navigator.pushReplacement(
+      // ignore: use_build_context_synchronously
       context,
       MaterialPageRoute(builder: (context) => LoginScreen()),
     );
@@ -265,6 +266,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         );
       }
     } catch (e) {
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('No se pudo abrir el mapa: ${e.toString()}'),
@@ -346,10 +348,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (codigoConfirmacion == null) {
         throw Exception('No se pudo obtener código de confirmación');
       } else {
-        debugPrint('Código secreto: ${codigoConfirmacion ?? "NULL"}');
+        debugPrint('Código secreto: $codigoConfirmacion');
       }
 
       showDialog(
+        // ignore: use_build_context_synchronously
         context: context,
         builder: (BuildContext context) {
           return Dialog(
@@ -372,6 +375,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       Container(
                         padding: EdgeInsets.all(12),
                         decoration: BoxDecoration(
+                          // ignore: deprecated_member_use
                           color: Color(0xFF1A1B41).withOpacity(0.1),
                           shape: BoxShape.circle,
                         ),
@@ -406,6 +410,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           horizontal: 24,
                         ),
                         decoration: BoxDecoration(
+                          // ignore: deprecated_member_use
                           color: Colors.green.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -529,6 +534,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
     } catch (e) {
       ScaffoldMessenger.of(
+        // ignore: use_build_context_synchronously
         context,
       ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
@@ -739,13 +745,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       debugPrint('══════════════════════════════════════════════════');
       debugPrint('🔵 Iniciando solicitud de zonas...');
       debugPrint('URL: ${Config.apiUrl}listarZonas');
+
+      // Crear el cuerpo de la petición con banca, banca puede ser null, revisar en API tal caso
+      final requestBody = {
+        'usuario': widget.usuario,
+        'db': widget.db,
+        'banca': widget.banca,
+      };
+
       debugPrint(
         'Headers: ${{'Authorization': 'Bearer $token', 'Content-Type': 'application/json'}}',
       );
-      debugPrint(
-        'Body: ${jsonEncode({'usuario': widget.usuario, 'db': widget.db})}',
-        // 'banca': widget.banca
-      );
+      debugPrint('Body: ${jsonEncode(requestBody)}');
 
       final response = await http.post(
         Uri.parse('${Config.apiUrl}listarZonas'),
@@ -753,11 +764,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
-        body: jsonEncode({
-          'usuario': widget.usuario,
-          'db': widget.db,
-          // 'banca': widget.banca,
-        }),
+        body: jsonEncode(requestBody), // Usar el requestBody que incluye banca
       );
 
       debugPrint('══════════════════════════════════════════════════');
@@ -834,7 +841,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         "tipo": "todas",
         "mostrar": "saldo",
         "zona": zonaId,
-        "ban": "0001",
+        "banca": widget.banca, // PUEDE SER NULL OJO no se valida en front
       };
 
       debugPrint(
@@ -926,8 +933,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         "tipo": "todas",
         "mostrar": "saldo",
         "agencia": codigoAgencia,
-        "ban": "0001",
-        "ubicacion": _location,
+        'banca': widget.banca,
+        'ubicacion': _location,
       };
 
       final response = await http
@@ -951,7 +958,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             nombreAgenciaSeleccionada = agenciaData['nombre']?.toString();
             _ubicacionAgenciaActual = agenciaData['ubicacion']?.toString();
             debugPrint(
-              'Ubicación agencia ${agenciaData['codigo']}: ${_ubicacionAgenciaActual}',
+              'Ubicación agencia ${agenciaData['codigo']}: $_ubicacionAgenciaActual',
             );
 
             // Guardar siempre la ubicación si existe
@@ -1148,7 +1155,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         "db": widget.db,
         "agencia": codigoAgencia,
         "ubicacion": _location,
-        "ban": "0001",
+        "banca": widget.banca,
       };
 
       final response = await http
@@ -1282,7 +1289,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           'db': widget.db,
           'agencia': selectedAgenciaId.toString(),
           'ubicacion': _location,
-          'ban': '0001',
+          'banca': widget.banca,
           'monto': '0',
           'proceso': 'enviado',
           'moneda': selectedMoneda ?? 'COP',
@@ -1319,7 +1326,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         'db': widget.db,
         'agencia': selectedAgenciaId.toString(),
         'ubicacion': _location,
-        'ban': '0001',
+        'banca': widget.banca!, // Usar la banca capturada
         'monto': '0',
         'codigo': codigoConfirmacion, // Usar el código obtenido
         'novedad': _explicacionController.text,
@@ -1511,7 +1518,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           'db': widget.db,
           'agencia': selectedAgenciaId.toString(),
           'ubicacion': _location,
-          'ban': '0001',
+          'banca': widget.banca,
           'monto': _montoController.text,
           'proceso': 'enviado',
           'moneda': selectedMoneda ?? 'COP',
@@ -1590,7 +1597,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         'db': widget.db,
         'agencia': selectedAgenciaId.toString(),
         'ubicacion': _location,
-        'ban': '0001',
+        'banca': widget.banca!, // Usar la banca capturada,
         'monto': _montoController.text,
         'codigo': _codigoController.text,
         'novedad': _novedadController.text,
@@ -2206,7 +2213,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     return DropdownMenuItem<String>(
                                       value: zona['codigo'].toString(),
                                       child: Text(
-                                        zona['nombre'] ?? 'Sin nombre',
+                                        zona['codigo'].toString() +
+                                                ' - ' +
+                                                zona['nombre'] ??
+                                            'Sin nombre',
                                       ),
                                     );
                                   }).toList(),
@@ -2288,7 +2298,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                           SizedBox(width: 10),
                                           Expanded(
                                             child: Text(
-                                              nombre,
+                                              '$codigo | $nombre',
                                               style: TextStyle(
                                                 fontSize: 16,
                                                 color:

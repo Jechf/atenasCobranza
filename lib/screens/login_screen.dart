@@ -4,7 +4,6 @@ import '../home_screen.dart';
 import 'package:uuid/uuid.dart';
 import '../session_manager.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -192,9 +191,7 @@ class _LoginScreenState extends State<LoginScreen> {
         await prefs.setString('db', data['db']);
 
         final String bancaFromResponse = data['data']['banca'].toString();
-        if (bancaFromResponse != null) {
-          await prefs.setString('banca', bancaFromResponse);
-        }
+        await prefs.setString('banca', bancaFromResponse);
 
         debugPrint('Banca guardada: $bancaFromResponse');
 
