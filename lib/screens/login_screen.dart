@@ -189,11 +189,10 @@ class _LoginScreenState extends State<LoginScreen> {
         await prefs.setString('cedula', cobrador['token']);
         await prefs.setString('usuario', data['usuario']);
         await prefs.setString('db', data['db']);
-
         final String bancaFromResponse = data['data']['banca'].toString();
         await prefs.setString('banca', bancaFromResponse);
 
-        debugPrint('Banca guardada: $bancaFromResponse');
+        // debugPrint('Banca guardada: $bancaFromResponse');
 
         // Inicializar y registrar la sesión
         await SessionManager().initialize();

@@ -75,6 +75,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   File? _fotoMontoCero;
 
+  bool _tieneUltimoPago = false;
   bool isLoadingSaldo = false;
   bool _isSubmitting = false;
   bool _isMontoConfirmed = false; // Estado del checkbox
@@ -84,6 +85,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   BlueThermalPrinter bluetooth = BlueThermalPrinter.instance;
 
+  Map<String, dynamic>? _ultimoPago;
   Map<String, dynamic>? _ultimoTicketData;
   String? _ultimoTicketMensaje;
   String? _ultimoTicketNumero;
@@ -198,6 +200,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildInfoUltimoPago(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[700],
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -924,12 +959,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     try {
       setState(() {
         isLoadingSaldo = true;
+        _ultimoPago = null; // Resetear información de último pago
+        _tieneUltimoPago = false;
       });
+
+      // OBTENER LA FECHA DEL CONTROLADOR EN LUGAR DE LA FECHA ACTUAL
+      String fechaParaConsulta;
+      if (_fechaController.text.isNotEmpty) {
+        fechaParaConsulta = _fechaController.text.replaceAll('-', '');
+      } else {
+        // Fallback a fecha actual si no hay fecha seleccionada
+        fechaParaConsulta = DateFormat('yyyyMMdd').format(DateTime.now());
+      }
 
       final requestBody = {
         "usuario": widget.cobrador['id'].toString(),
         "db": widget.db,
-        "fecha": DateFormat('yyyyMMdd').format(DateTime.now()),
+        "fecha": fechaParaConsulta, // USAR LA FECHA DEL CONTROLADOR
         "tipo": "todas",
         "mostrar": "saldo",
         "agencia": codigoAgencia,
@@ -953,6 +999,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (response.statusCode == 200 && data['e'] == 1) {
         if (data['data'] is List && data['data'].isNotEmpty) {
           final agenciaData = data['data'][0];
+
+          // CAPTURAR INFORMACIÓN DEL ÚLTIMO PAGO
+          if (agenciaData['ult_pago'] is List &&
+              agenciaData['ult_pago'].isNotEmpty) {
+            final ultimoPagoData = agenciaData['ult_pago'][0];
+            setState(() {
+              _ultimoPago = {
+                'fecha': ultimoPagoData['fecha']?.toString() ?? 'N/A',
+                'monto': ultimoPagoData['monto']?.toString() ?? 'N/A',
+                'cobrador': ultimoPagoData['cobrador']?.toString() ?? 'N/A',
+                'hace': ultimoPagoData['hace']?.toString() ?? 'N/A',
+              };
+              _tieneUltimoPago = true;
+            });
+            debugPrint('📋 Último pago encontrado: $_ultimoPago');
+          } else {
+            setState(() {
+              _ultimoPago = null;
+              _tieneUltimoPago = false;
+            });
+          }
+
           setState(() {
             saldo = (agenciaData['acobrar']);
             nombreAgenciaSeleccionada = agenciaData['nombre']?.toString();
@@ -996,6 +1064,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() {
         isLoadingSaldo = false;
       });
+    }
+  }
+
+  String _formatearMonto(String monto) {
+    try {
+      final montoNum = double.tryParse(monto);
+      if (montoNum == null) return monto;
+
+      final formatter = NumberFormat.currency(
+        symbol: '\$',
+        decimalDigits: 2,
+        locale: 'es_CO',
+      );
+      return formatter.format(montoNum);
+    } catch (e) {
+      return monto;
     }
   }
 
@@ -2240,6 +2324,61 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ),
                 ),
 
+                SizedBox(height: 20),
+
+                // Fecha
+                TextField(
+                  controller: _fechaController,
+                  decoration: InputDecoration(
+                    labelText: 'Fecha de Corte',
+                    labelStyle: TextStyle(
+                      color: Colors.blueGrey, // Color del texto de la etiqueta
+                      fontWeight:
+                          FontWeight.w600, // Peso de fuente para mayor énfasis
+                    ),
+                    hintText:
+                        'Selecciona una fecha', // Texto de sugerencia en el campo
+                    hintStyle: TextStyle(
+                      color:
+                          Colors
+                              .grey[500], // Color gris para el texto de sugerencia
+                    ),
+                    prefixIcon: Icon(
+                      Icons.calendar_today,
+                      color: Colors.blue,
+                    ), // Ícono de calendario
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(
+                        10,
+                      ), // Bordes redondeados
+                      borderSide: BorderSide(
+                        color: Colors.grey.shade300,
+                        width: 2,
+                      ), // Color del borde
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(
+                        color: Colors.grey.shade300,
+                        width: 2,
+                      ), // Borde al recibir el foco
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(
+                        color: Colors.grey.shade200,
+                        width: 2,
+                      ), // Borde cuando está habilitado
+                    ),
+                    contentPadding: EdgeInsets.symmetric(
+                      vertical: 18,
+                      horizontal: 16,
+                    ),
+                  ),
+                  readOnly: true,
+                  onTap: () => _selectDate(context),
+                ),
+
                 SizedBox(height: 10),
 
                 // Agencia Dropdown
@@ -2329,6 +2468,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     selectedAgenciaId = newValue;
                                     saldo = null; // Resetear mientras se carga
                                     isLoadingSaldo = true;
+                                    _ultimoPago = null; // Resetear último pago
+                                    _tieneUltimoPago = false;
                                   });
 
                                   await _fetchSaldoAgencia(newValue);
@@ -2457,6 +2598,63 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                             ),
                                           ),
                                         ),
+
+                                        if (_tieneUltimoPago &&
+                                            _ultimoPago != null)
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 16.0,
+                                            ),
+                                            child: Container(
+                                              padding: EdgeInsets.all(12),
+                                              decoration: BoxDecoration(
+                                                color: Colors.blue[50],
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                border: Border.all(
+                                                  color: Colors.blue[200]!,
+                                                ),
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    '📋 Último Pago Registrado',
+                                                    style: TextStyle(
+                                                      fontSize: 14,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: Colors.blue[800],
+                                                    ),
+                                                  ),
+                                                  SizedBox(height: 8),
+                                                  _buildInfoUltimoPago(
+                                                    'Fecha:',
+                                                    _ultimoPago!['fecha'],
+                                                  ),
+                                                  _buildInfoUltimoPago(
+                                                    'Monto:',
+                                                    _formatearMonto(
+                                                      _ultimoPago!['monto'],
+                                                    ),
+                                                  ),
+                                                  _buildInfoUltimoPago(
+                                                    'Cobrador:',
+                                                    _ultimoPago!['cobrador'],
+                                                  ),
+                                                  if (_ultimoPago!['hace'] !=
+                                                          'N/A' &&
+                                                      _ultimoPago!['hace'] !=
+                                                          '0')
+                                                    _buildInfoUltimoPago(
+                                                      'Hace:',
+                                                      '${_ultimoPago!['hace']} días',
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
                                       ],
                                     ),
                               ],
@@ -2465,61 +2663,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ],
                     ),
                   ),
-                ),
-
-                SizedBox(height: 20),
-
-                // Fecha
-                TextField(
-                  controller: _fechaController,
-                  decoration: InputDecoration(
-                    labelText: 'Fecha de Cobro',
-                    labelStyle: TextStyle(
-                      color: Colors.blueGrey, // Color del texto de la etiqueta
-                      fontWeight:
-                          FontWeight.w600, // Peso de fuente para mayor énfasis
-                    ),
-                    hintText:
-                        'Selecciona una fecha', // Texto de sugerencia en el campo
-                    hintStyle: TextStyle(
-                      color:
-                          Colors
-                              .grey[500], // Color gris para el texto de sugerencia
-                    ),
-                    prefixIcon: Icon(
-                      Icons.calendar_today,
-                      color: Colors.blue,
-                    ), // Ícono de calendario
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(
-                        10,
-                      ), // Bordes redondeados
-                      borderSide: BorderSide(
-                        color: Colors.grey.shade300,
-                        width: 2,
-                      ), // Color del borde
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide(
-                        color: Colors.grey.shade300,
-                        width: 2,
-                      ), // Borde al recibir el foco
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide(
-                        color: Colors.grey.shade200,
-                        width: 2,
-                      ), // Borde cuando está habilitado
-                    ),
-                    contentPadding: EdgeInsets.symmetric(
-                      vertical: 18,
-                      horizontal: 16,
-                    ),
-                  ),
-                  readOnly: true,
-                  onTap: () => _selectDate(context),
                 ),
 
                 SizedBox(height: 20),
