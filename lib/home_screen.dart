@@ -862,6 +862,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token') ?? '';
 
+    String fechaParaConsulta;
+    if (_fechaController.text.isNotEmpty) {
+      fechaParaConsulta = _fechaController.text.replaceAll('-', '');
+    } else {
+      // Fallback a fecha actual si no hay fecha seleccionada
+      fechaParaConsulta = DateFormat('yyyyMMdd').format(DateTime.now());
+    }
+
     try {
       debugPrint('══════════════════════════════════════════════════');
       debugPrint('🔵 Iniciando solicitud de agencias...');
@@ -870,9 +878,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final requestBody = {
         "usuario": widget.usuario,
         "db": widget.db,
-        "fecha": DateFormat(
-          'yyyyMMdd',
-        ).format(DateTime.now()), // Formato YYYYMMDD
+        "fecha": fechaParaConsulta, // Formato YYYYMMDD
         "tipo": "todas",
         "mostrar": "saldo",
         "zona": zonaId,
@@ -2263,6 +2269,60 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
 
                 SizedBox(height: 10), // Mayor espacio arriba
+
+                TextField(
+                  controller: _fechaController,
+                  decoration: InputDecoration(
+                    labelText: 'Fecha de Corte',
+                    labelStyle: TextStyle(
+                      color: Colors.blueGrey, // Color del texto de la etiqueta
+                      fontWeight:
+                          FontWeight.w600, // Peso de fuente para mayor énfasis
+                    ),
+                    hintText:
+                        'Selecciona una fecha', // Texto de sugerencia en el campo
+                    hintStyle: TextStyle(
+                      color:
+                          Colors
+                              .grey[500], // Color gris para el texto de sugerencia
+                    ),
+                    prefixIcon: Icon(
+                      Icons.calendar_today,
+                      color: Colors.blue,
+                    ), // Ícono de calendario
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(
+                        10,
+                      ), // Bordes redondeados
+                      borderSide: BorderSide(
+                        color: Colors.grey.shade300,
+                        width: 2,
+                      ), // Color del borde
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(
+                        color: Colors.grey.shade300,
+                        width: 2,
+                      ), // Borde al recibir el foco
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(
+                        color: Colors.grey.shade200,
+                        width: 2,
+                      ), // Borde cuando está habilitado
+                    ),
+                    contentPadding: EdgeInsets.symmetric(
+                      vertical: 18,
+                      horizontal: 16,
+                    ),
+                  ),
+                  readOnly: true,
+                  onTap: () => _selectDate(context),
+                ),
+
+                SizedBox(height: 10), // Mayor espacio arriba
                 // Zona Dropdown
                 Card(
                   color: Colors.white,
@@ -2322,61 +2382,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ],
                     ),
                   ),
-                ),
-
-                SizedBox(height: 20),
-
-                // Fecha
-                TextField(
-                  controller: _fechaController,
-                  decoration: InputDecoration(
-                    labelText: 'Fecha de Corte',
-                    labelStyle: TextStyle(
-                      color: Colors.blueGrey, // Color del texto de la etiqueta
-                      fontWeight:
-                          FontWeight.w600, // Peso de fuente para mayor énfasis
-                    ),
-                    hintText:
-                        'Selecciona una fecha', // Texto de sugerencia en el campo
-                    hintStyle: TextStyle(
-                      color:
-                          Colors
-                              .grey[500], // Color gris para el texto de sugerencia
-                    ),
-                    prefixIcon: Icon(
-                      Icons.calendar_today,
-                      color: Colors.blue,
-                    ), // Ícono de calendario
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(
-                        10,
-                      ), // Bordes redondeados
-                      borderSide: BorderSide(
-                        color: Colors.grey.shade300,
-                        width: 2,
-                      ), // Color del borde
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide(
-                        color: Colors.grey.shade300,
-                        width: 2,
-                      ), // Borde al recibir el foco
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide(
-                        color: Colors.grey.shade200,
-                        width: 2,
-                      ), // Borde cuando está habilitado
-                    ),
-                    contentPadding: EdgeInsets.symmetric(
-                      vertical: 18,
-                      horizontal: 16,
-                    ),
-                  ),
-                  readOnly: true,
-                  onTap: () => _selectDate(context),
                 ),
 
                 SizedBox(height: 10),
@@ -2630,7 +2635,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                                   ),
                                                   SizedBox(height: 8),
                                                   _buildInfoUltimoPago(
-                                                    'Fecha:',
+                                                    'Fecha de corte:',
                                                     _ultimoPago!['fecha'],
                                                   ),
                                                   _buildInfoUltimoPago(
