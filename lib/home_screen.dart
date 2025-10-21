@@ -103,7 +103,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _requestPermissions();
     _initializeDeviceAndLocation();
-    _fetchZonas();
     _checkBluetoothConnection();
     _setDefaultDate();
     _monedasList();
@@ -116,6 +115,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // Iniciar timers para verificación de inactividad
     _startInactivityTimer();
     _startSessionCheckTimer();
+
+    // Cargar zonas después de un pequeño delay para asegurar que el contexto esté listo
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await _fetchZonas();
+
+        // Verificar si después de cargar las zonas no hay datos
+        if (zonas.isEmpty) {
+          // Esperar un poco más para asegurar que el diálogo se muestre correctamente
+          await Future.delayed(Duration(milliseconds: 500));
+          // El diálogo se mostrará automáticamente desde _fetchZonas si no hay rutas
+        }
+      } catch (e) {
+        debugPrint('Error al cargar zonas en initState: $e');
+      }
+    });
   }
 
   @override
@@ -236,6 +251,63 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _enviarPorWhatsApp() async {
+    try {
+      if (_ultimoTicketData == null ||
+          _ultimoTicketNumero == null ||
+          _ultimoTicketRecibo == null) {
+        throw Exception('No hay información de ticket disponible');
+      }
+
+      // Construir el mensaje con formato
+      final mensaje = '''
+📋 *COMPROBANTE DE COBRO*
+
+*Ticket N°:* ${_ultimoTicketNumero!}
+*Recibo N°:* ${_ultimoTicketRecibo!}
+*Agencia:* ${_ultimoTicketData!['agencia'] ?? 'N/A'}
+*Zona:* ${_ultimoTicketData!['zona'] ?? 'N/A'}
+*Fecha:* ${_ultimoTicketData!['fecha'] ?? 'N/A'}
+*Monto:* ${_ultimoTicketData!['monto'] ?? '0'} ${_ultimoTicketData!['moneda'] ?? ''}
+*Cobrador:* ${widget.cobrador['nombre']}
+
+${_ultimoTicketMensaje ?? 'Transacción completada exitosamente'}
+
+*Sistema de Cobranza*
+${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
+''';
+
+      // Codificar el mensaje para URL
+      final mensajeCodificado = Uri.encodeComponent(mensaje);
+
+      // CORRECCIÓN: Usar la URL correcta de WhatsApp
+      final url = Uri.parse('https://wa.me/?text=$mensajeCodificado');
+
+      // Verificar si WhatsApp está instalado
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        // Si WhatsApp no está instalado, abrir en el navegador web
+        final webUrl = Uri.parse(
+          'https://web.whatsapp.com/send?text=$mensajeCodificado',
+        );
+        if (await canLaunchUrl(webUrl)) {
+          await launchUrl(webUrl, mode: LaunchMode.externalApplication);
+        } else {
+          throw Exception('No se pudo abrir WhatsApp');
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al enviar por WhatsApp: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      debugPrint('Error WhatsApp: $e');
+    }
+  }
+
   // Cerrar sesión
   Future<void> _logout() async {
     final prefs = await SharedPreferences.getInstance();
@@ -343,6 +415,72 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     } else {
       return Color(0xFF1A1B41);
     }
+  }
+
+  Future<bool> _mostrarDialogoImpresoraDesconectada() async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              icon: Icon(
+                Icons.warning_amber_rounded,
+                size: 40,
+                color: Colors.orange,
+              ),
+              title: Text(
+                "Impresora Desconectada",
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange[800],
+                ),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "La impresora no está conectada. ¿Desea enviar el comprobante por WhatsApp?",
+                    style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+                  ),
+                  SizedBox(height: 10),
+                  Text(
+                    "Puede configurar la impresora desde el menú de opciones.",
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontStyle: FontStyle.italic,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(false); // Cancelar
+                  },
+                  child: Text(
+                    "Cancelar",
+                    style: TextStyle(color: Colors.grey[700]),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(true); // Continuar con WhatsApp
+                  },
+                  child: Text(
+                    "Enviar por WhatsApp",
+                    style: TextStyle(
+                      color: Color(0xFF1A1B41),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
   }
 
   void _guardarUltimoTicket(String mensaje, String ticket, String recibo) {
@@ -816,6 +954,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         debugPrint('\nBody de respuesta (parsed JSON):');
         debugPrint('• Estado (e): ${data['e']}');
 
+        // VALIDACIÓN CRÍTICA: Verificar si data es un Map vacío (no hay rutas)
+        if (data['data'] is Map && (data['data'] as Map).isEmpty) {
+          debugPrint('⚠️ No hay rutas cargadas para este usuario');
+
+          // Mostrar diálogo informativo y hacer logout
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _mostrarDialogoNoHayRutas();
+          });
+          return;
+        }
+
         if (data['data'] is List) {
           debugPrint('• Cantidad de zonas: ${data['data'].length}');
           debugPrint('\n📋 Lista completa de zonas:');
@@ -828,6 +977,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           }
         } else {
           debugPrint('⚠️ El campo "data" no es una lista o no existe');
+
+          // Si data no es una lista y no es un Map vacío, también mostrar error
+          if (data['data'] != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _mostrarDialogoNoHayRutas();
+            });
+            return;
+          }
         }
 
         if (response.statusCode == 200) {
@@ -844,18 +1001,88 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             debugPrint('\n🟢 Zonas cargadas correctamente en el estado');
           } else {
             debugPrint('\n🔴 Error en la estructura de la respuesta:');
-            debugPrint(data);
+            debugPrint(data.toString());
+
+            // Si hay error en la estructura y no es un Map vacío, mostrar diálogo
+            if (!(data['data'] is Map && (data['data'] as Map).isEmpty)) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _mostrarDialogoNoHayRutas();
+              });
+            }
           }
         }
       } catch (e) {
         debugPrint('\n🔴 Error al parsear JSON: $e');
+
+        // En caso de error de parsing, también mostrar el diálogo
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _mostrarDialogoNoHayRutas();
+        });
       }
 
       debugPrint('══════════════════════════════════════════════════');
     } catch (e) {
       debugPrint('\n🔴 Error en la solicitud: $e');
       debugPrint('══════════════════════════════════════════════════');
+
+      // En caso de error de red, también mostrar el diálogo
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _mostrarDialogoNoHayRutas();
+      });
     }
+  }
+
+  // Método para mostrar el diálogo cuando no hay rutas
+  void _mostrarDialogoNoHayRutas() {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // El usuario no puede cerrar tocando fuera
+      builder: (BuildContext context) {
+        return AlertDialog(
+          icon: Icon(Icons.route_outlined, size: 40, color: Colors.orange),
+          title: Text(
+            "Sin Rutas Asignadas",
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.orange[800],
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "No hay rutas de cobranza cargadas para su usuario.",
+                style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+              ),
+              SizedBox(height: 8),
+              Text(
+                "Por favor, contacte al administrador del sistema para que le asigne las rutas correspondientes.",
+                style: TextStyle(
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                _logout(); // Cerrar sesión automáticamente
+              },
+              child: Text(
+                "Aceptar",
+                style: TextStyle(
+                  color: Color(0xFF1A1B41),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _fetchAgencias(String zonaId) async {
@@ -912,6 +1139,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         debugPrint('\nBody de respuesta (parsed JSON):');
         debugPrint('• Estado (e): ${data['e']}');
 
+        // VALIDACIÓN CRÍTICA: Verificar si data es un Map vacío (no hay agencias en la zona)
+        if (data['data'] is Map && (data['data'] as Map).isEmpty) {
+          debugPrint('⚠️ No hay agencias cargadas para esta zona');
+
+          // Mostrar diálogo informativo
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _mostrarDialogoNoHayAgencias(zonaId);
+          });
+
+          setState(() {
+            agencias = [];
+          });
+          return;
+        }
+
         if (data['data'] is List) {
           debugPrint('• Cantidad de agencias: ${data['data'].length}');
           debugPrint('\n📋 Lista completa de agencias:');
@@ -924,6 +1166,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           }
         } else {
           debugPrint('⚠️ El campo "data" no es una lista o no existe');
+
+          // Si data no es una lista y no es un Map vacío, también mostrar error
+          if (data['data'] != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _mostrarDialogoNoHayAgencias(zonaId);
+            });
+          }
+
+          setState(() {
+            agencias = [];
+          });
+          return;
         }
 
         if (response.statusCode == 200) {
@@ -939,23 +1193,125 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       .toList();
             });
             debugPrint('\n🟢 Agencias cargadas correctamente en el estado');
+
+            // Si la lista de agencias está vacía después del filtro, mostrar diálogo
+            if (agencias.isEmpty) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _mostrarDialogoNoHayAgencias(zonaId);
+              });
+            }
           } else {
             debugPrint('\n🔴 Error en la estructura de la respuesta:');
-            debugPrint(data);
+            debugPrint(data.toString());
+
+            // Si hay error en la estructura y no es un Map vacío, mostrar diálogo
+            if (!(data['data'] is Map && (data['data'] as Map).isEmpty)) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _mostrarDialogoNoHayAgencias(zonaId);
+              });
+            }
+
+            setState(() {
+              agencias = [];
+            });
           }
         }
       } catch (e) {
         debugPrint('\n🔴 Error al parsear JSON: $e');
+
+        // En caso de error de parsing, también mostrar el diálogo
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _mostrarDialogoNoHayAgencias(zonaId);
+        });
+
+        setState(() {
+          agencias = [];
+        });
       }
 
       debugPrint('══════════════════════════════════════════════════');
     } catch (e) {
       debugPrint('\n🔴 Error en la solicitud: $e');
       debugPrint('══════════════════════════════════════════════════');
+
+      // En caso de error de red, también mostrar el diálogo
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _mostrarDialogoNoHayAgencias(zonaId);
+      });
+
+      setState(() {
+        agencias = [];
+      });
+
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error al cargar agencias: $e')));
     }
+  }
+
+  // Método para mostrar el diálogo cuando no hay agencias en la zona
+  void _mostrarDialogoNoHayAgencias(String zonaId) {
+    // Buscar el nombre de la zona seleccionada
+    String nombreZona = 'la zona seleccionada';
+    try {
+      final zonaSeleccionada = zonas.firstWhere(
+        (zona) => zona['codigo'].toString() == zonaId,
+        orElse: () => {'nombre': 'Desconocida'},
+      );
+      nombreZona = '"${zonaSeleccionada['nombre']}"';
+    } catch (e) {
+      debugPrint('Error al obtener nombre de zona: $e');
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: true, // El usuario puede cerrar tocando fuera
+      builder: (BuildContext context) {
+        return AlertDialog(
+          icon: Icon(Icons.business_outlined, size: 40, color: Colors.blue),
+          title: Text(
+            "Sin Agencias Disponibles",
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.blue[800],
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "No hay agencias disponibles para $nombreZona.",
+                style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+              ),
+              SizedBox(height: 8),
+              Text(
+                "Puede seleccionar otra zona o contactar al administrador",
+                style: TextStyle(
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text(
+                "Entendido",
+                style: TextStyle(
+                  color: Color(0xFF1A1B41),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _fetchSaldoAgencia(String codigoAgencia) async {
@@ -1364,6 +1720,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
 
     try {
+      // Verificar si la impresora está desconectada
+      bool usarWhatsApp = false;
+      if (!_isPrinterConnected) {
+        usarWhatsApp = await _mostrarDialogoImpresoraDesconectada();
+        if (!usarWhatsApp) {
+          setState(() {
+            _isSubmitting = false;
+          });
+          return; // El usuario canceló el proceso
+        }
+      }
+
       // 1. Primero insertar el cobro
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token') ?? '';
@@ -1448,12 +1816,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           sendData['recibo']?.toString() ?? 'N/A',
         );
 
-        if (_isPrinterConnected) {
+        // Enviar por WhatsApp si se seleccionó esa opción
+        if (usarWhatsApp) {
+          await _enviarPorWhatsApp();
+        } else if (_isPrinterConnected) {
+          // Imprimir solo si la impresora está conectada
           await _imprimirComprobante(
             sendData['mensaje'],
             sendData['ticket']?.toString() ?? 'N/A',
             sendData['recibo']?.toString() ?? 'N/A',
-            _montoController.text, // Pasar el monto
+            _montoController.text,
           );
         }
 
@@ -1666,6 +2038,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
 
+    // Verificar si la impresora está desconectada
+    bool usarWhatsApp = false;
+    if (!_isPrinterConnected) {
+      usarWhatsApp = await _mostrarDialogoImpresoraDesconectada();
+      if (!usarWhatsApp) {
+        return; // El usuario canceló el proceso
+      }
+    }
+
     setState(() {
       _isSubmitting = true;
     });
@@ -1687,7 +2068,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         'db': widget.db,
         'agencia': selectedAgenciaId.toString(),
         'ubicacion': _location,
-        'banca': widget.banca!, // Usar la banca capturada,
+        'banca': widget.banca!,
         'monto': _montoController.text,
         'codigo': _codigoController.text,
         'novedad': _novedadController.text,
@@ -1717,19 +2098,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final data = json.decode(responseData);
 
       if (response.statusCode == 200 && data['e'] == 1) {
-        // Mostrar confirmación e imprimir
+        // Mostrar confirmación
         _mostrarModalConfirmacion(
           data['mensaje'],
           data['ticket']?.toString() ?? 'N/A',
           data['recibo']?.toString() ?? 'N/A',
         );
 
-        if (_isPrinterConnected) {
+        // Enviar por WhatsApp si se seleccionó esa opción
+        if (usarWhatsApp) {
+          await _enviarPorWhatsApp();
+        } else if (_isPrinterConnected) {
+          // Imprimir solo si la impresora está conectada
           await _imprimirComprobante(
             data['mensaje'],
             data['ticket']?.toString() ?? 'N/A',
             data['recibo']?.toString() ?? '',
-            _montoController.text, // Pasar el monto
+            _montoController.text,
           );
         }
 
@@ -1865,6 +2250,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               child: Text("Cerrar"),
             ),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              onPressed: _enviarPorWhatsApp,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.send, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text("WhatsApp", style: TextStyle(color: Colors.white)),
+                ],
+              ),
+            ),
+            ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Color(0xFF1A1B41),
               ),
@@ -1874,8 +2271,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     _ultimoTicketMensaje!,
                     _ultimoTicketNumero!,
                     _ultimoTicketRecibo ?? '',
-                    _ultimoTicketData!['monto'] ??
-                        '0', // Pasar el monto guardado
+                    _ultimoTicketData!['monto'] ?? '0',
                   );
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Ticket reimpreso correctamente')),
@@ -1887,11 +2283,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 }
               },
               child: Row(
-                mainAxisSize:
-                    MainAxisSize.min, // Para que el Row no ocupe todo el ancho
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.print, color: Colors.white), // Icono de impresora
-                  SizedBox(width: 8), // Espacio entre el icono y el texto
+                  Icon(Icons.print, color: Colors.white),
+                  SizedBox(width: 8),
                   Text("Reimprimir", style: TextStyle(color: Colors.white)),
                 ],
               ),
@@ -2357,21 +2752,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     return DropdownMenuItem<String>(
                                       value: zona['codigo'].toString(),
                                       child: Text(
-                                        zona['codigo'].toString() +
-                                                ' - ' +
-                                                zona['nombre'] ??
-                                            'Sin nombre',
+                                        // ignore: prefer_interpolation_to_compose_strings
+                                        '${zona['codigo']} - ' + zona['nombre'],
                                       ),
                                     );
                                   }).toList(),
+
                               onChanged: (String? newValue) {
                                 if (newValue != null) {
                                   setState(() {
-                                    selectedZonaId =
-                                        newValue; // Ahora manejamos el código como String
+                                    selectedZonaId = newValue;
                                     selectedAgenciaId = null;
                                     saldo = null;
-                                    agencias = [];
+                                    agencias =
+                                        []; // Limpiar agencias inmediatamente
+                                    nombreAgenciaSeleccionada = null;
                                   });
                                   _fetchAgencias(newValue);
                                 }
@@ -2625,7 +3020,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                                     CrossAxisAlignment.start,
                                                 children: [
                                                   Text(
-                                                    '📋 Último Pago Registrado',
+                                                    '📋 Último Pago Registrado', //revisar en backend la fecha enviada para el ultimo pago
                                                     style: TextStyle(
                                                       fontSize: 14,
                                                       fontWeight:
@@ -2636,7 +3031,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                                   SizedBox(height: 8),
                                                   _buildInfoUltimoPago(
                                                     'Fecha de corte:',
-                                                    _ultimoPago!['fecha'],
+                                                    _ultimoPago!['fecha'], //llega de la api el dia q realizo el cobro NO la fecha de corte de ese cobro
                                                   ),
                                                   _buildInfoUltimoPago(
                                                     'Monto:',

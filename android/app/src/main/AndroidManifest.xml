@@ -8,7 +8,6 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:enableOnBackInvokedCallback="true">
         
-
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="AIzaSyAlcbS5cO5jRvlwC1Koz4qwS5-QLCRxtuU"/>
@@ -38,10 +37,36 @@
             android:value="2"/>
     </application>
     
+    <!-- QUERIES PARA WHATSAPP Y OTRAS APPS -->
     <queries>
+        <!-- WhatsApp -->
+        <package android:name="com.whatsapp" />
+        <package android:name="com.whatsapp.w4b" />
+        
+        <!-- Para URLs de WhatsApp -->
         <intent>
-            <action android:name="android.intent.action.PROCESS_TEXT"/>
-            <data android:mimeType="text/plain"/>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" android:host="wa.me" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" android:host="api.whatsapp.com" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="whatsapp" />
+        </intent>
+        
+        <!-- Para compartir texto genérico -->
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="text/plain" />
+        </intent>
+        
+        <!-- Para URLs genéricas -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
         </intent>
     </queries>
 </manifest>
