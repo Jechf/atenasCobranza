@@ -2663,7 +2663,7 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
                   ),
                 ),
 
-                SizedBox(height: 10), // Mayor espacio arriba
+                SizedBox(height: 20),
 
                 TextField(
                   controller: _fechaController,

@@ -37,14 +37,11 @@
             android:value="2"/>
     </application>
     
-    <!-- QUERIES PARA WHATSAPP Y OTRAS APPS -->
     <queries>
-        <!-- WhatsApp -->
         <package android:name="com.whatsapp" />
         <package android:name="com.whatsapp.w4b" />
         
-        <!-- Para URLs de WhatsApp -->
-        <intent>
+          <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" android:host="wa.me" />
         </intent>
@@ -57,14 +54,12 @@
             <data android:scheme="whatsapp" />
         </intent>
         
-        <!-- Para compartir texto genérico -->
-        <intent>
+          <intent>
             <action android:name="android.intent.action.SEND" />
             <data android:mimeType="text/plain" />
         </intent>
         
-        <!-- Para URLs genéricas -->
-        <intent>
+          <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
         </intent>
