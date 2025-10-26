@@ -8,9 +8,11 @@ import 'package:intl/intl.dart';
 import '/screens/login_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:share_plus/share_plus.dart';
 import './screens/agencies_map_screen.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http_parser/http_parser.dart';
+import './services/pdf_generator_service.dart'; // Ajusta la ruta según tu estructura
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -253,58 +255,60 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _enviarPorWhatsApp() async {
     try {
-      if (_ultimoTicketData == null ||
-          _ultimoTicketNumero == null ||
-          _ultimoTicketRecibo == null) {
+      if (_ultimoTicketData == null || _ultimoTicketNumero == null) {
         throw Exception('No hay información de ticket disponible');
       }
 
-      // Construir el mensaje con formato
-      final mensaje = '''
-📋 *COMPROBANTE DE COBRO*
+      setState(() {
+        _isSubmitting = true;
+      });
 
-*Ticket N°:* ${_ultimoTicketNumero!}
-*Recibo N°:* ${_ultimoTicketRecibo!}
-*Agencia:* ${_ultimoTicketData!['agencia'] ?? 'N/A'}
-*Zona:* ${_ultimoTicketData!['zona'] ?? 'N/A'}
-*Fecha:* ${_ultimoTicketData!['fecha'] ?? 'N/A'}
-*Monto:* ${_ultimoTicketData!['monto'] ?? '0'} ${_ultimoTicketData!['moneda'] ?? ''}
-*Cobrador:* ${widget.cobrador['nombre']}
+      // Generar PDF
+      final pdfFile = await PdfGeneratorService.generarComprobantePDF(
+        ticketNumero: _ultimoTicketNumero!,
+        reciboNumero: _ultimoTicketRecibo ?? 'N/A',
+        agencia: _ultimoTicketData!['agencia'] ?? 'N/A',
+        zona: _ultimoTicketData!['zona'] ?? 'N/A',
+        fecha: _ultimoTicketData!['fecha'] ?? 'N/A',
+        monto: _ultimoTicketData!['monto'] ?? '0',
+        moneda: _ultimoTicketData!['moneda'] ?? '',
+        cobrador: widget.cobrador['nombre'],
+        mensaje: _ultimoTicketMensaje ?? 'Transacción completada exitosamente',
+      );
 
-${_ultimoTicketMensaje ?? 'Transacción completada exitosamente'}
+      // Mensaje corto para acompañar el archivo
+      final mensajeCorto = '''
+📋 COMPROBANTE DE COBRO
 
-*Sistema de Cobranza*
+Ticket N°: ${_ultimoTicketNumero!}
+Recibo N°: ${_ultimoTicketRecibo ?? 'N/A'}
+Monto: ${_ultimoTicketData!['monto'] ?? '0'} ${_ultimoTicketData!['moneda'] ?? ''}
+
+Sistema de Cobranza
 ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
 ''';
 
-      // Codificar el mensaje para URL
-      final mensajeCodificado = Uri.encodeComponent(mensaje);
+      // Compartir archivo PDF
+      await Share.shareXFiles(
+        [XFile(pdfFile.path, mimeType: 'application/pdf')],
+        text: mensajeCorto,
+        subject: 'Comprobante de Cobro ${_ultimoTicketNumero!}',
+      );
 
-      // CORRECCIÓN: Usar la URL correcta de WhatsApp
-      final url = Uri.parse('https://wa.me/?text=$mensajeCodificado');
-
-      // Verificar si WhatsApp está instalado
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
-      } else {
-        // Si WhatsApp no está instalado, abrir en el navegador web
-        final webUrl = Uri.parse(
-          'https://web.whatsapp.com/send?text=$mensajeCodificado',
-        );
-        if (await canLaunchUrl(webUrl)) {
-          await launchUrl(webUrl, mode: LaunchMode.externalApplication);
-        } else {
-          throw Exception('No se pudo abrir WhatsApp');
-        }
-      }
+      // Limpiar archivos temporales periódicamente
+      await PdfGeneratorService.limpiarArchivosTemporales();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al enviar por WhatsApp: $e'),
+          content: Text('Error al generar/compartir comprobante: $e'),
           backgroundColor: Colors.red,
         ),
       );
-      debugPrint('Error WhatsApp: $e');
+      debugPrint('Error al generar PDF/WhatsApp: $e');
+    } finally {
+      setState(() {
+        _isSubmitting = false;
+      });
     }
   }
 
