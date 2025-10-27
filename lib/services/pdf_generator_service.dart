@@ -35,7 +35,7 @@ class PdfGeneratorService {
               if (logoImage != null)
                 pw.Center(
                   child: pw.Container(
-                    height: 60, // Altura del logo
+                    height: 80, // Altura del logo
                     child: pw.Image(logoImage),
                   ),
                 ),
@@ -47,7 +47,7 @@ class PdfGeneratorService {
                 child: pw.Text(
                   'COMPROBANTE DE COBRO',
                   style: pw.TextStyle(
-                    fontSize: 16,
+                    fontSize: 12,
                     fontWeight: pw.FontWeight.bold,
                   ),
                 ),
@@ -60,7 +60,7 @@ class PdfGeneratorService {
               _buildInfoRow('Recibo N°:', reciboNumero),
               _buildInfoRow('Agencia:', agencia),
               _buildInfoRow('Zona:', zona),
-              _buildInfoRow('Fecha de Corte:', fecha),
+              _buildInfoRow('Corte:', fecha),
               pw.SizedBox(height: 10),
 
               // Monto destacado
