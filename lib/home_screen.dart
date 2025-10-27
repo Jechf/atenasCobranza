@@ -2,17 +2,19 @@ import 'dart:io';
 import 'dart:async';
 import 'config.dart';
 import 'dart:convert';
+import 'dart:ui' as ui;
 import 'session_manager.dart';
 import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
 import '/screens/login_screen.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
 import './screens/agencies_map_screen.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http_parser/http_parser.dart';
-import './services/pdf_generator_service.dart'; // Ajusta la ruta según tu estructura
+import './services/pdf_generator_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -2305,43 +2307,99 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
     String mensaje,
     String ticket,
     String recibo,
-    String monto, // Nuevo parámetro para el monto
+    String monto,
   ) async {
     try {
       BlueThermalPrinter bluetooth = BlueThermalPrinter.instance;
 
       if (await bluetooth.isConnected ?? false) {
+        // Configuración inicial
         bluetooth.printNewLine();
+
+        // Intentar imprimir el logo
+        try {
+          // Cargar la imagen como bytes
+          final ByteData byteData = await rootBundle.load(
+            'assets/icon/impresora.png',
+          );
+          final Uint8List imageBytes = byteData.buffer.asUint8List();
+
+          // Para impresoras térmicas, usar printImageBytes es más confiable
+          bluetooth.printImageBytes(imageBytes);
+          bluetooth.printNewLine();
+          bluetooth.printNewLine();
+        } catch (e) {
+          debugPrint('Error al imprimir logo: $e');
+          // Encabezado alternativo si falla la imagen
+          bluetooth.printCustom('*** COMPROBANTE DE COBRO ***', 1, 1);
+          bluetooth.printNewLine();
+        }
+
+        // Contenido del comprobante
         bluetooth.printCustom('COMPROBANTE DE COBRO', 1, 1);
         bluetooth.printNewLine();
-        bluetooth.printCustom('---------------------', 1, 1);
+        bluetooth.printCustom('-----------------------------', 1, 1);
         bluetooth.printCustom('Recibo: $recibo', 1, 0);
         bluetooth.printCustom('Ticket: $ticket', 1, 0);
-        bluetooth.printCustom('Fecha Cierre: ${_fechaController.text}', 1, 0);
+        bluetooth.printCustom('Fecha: ${_fechaController.text}', 1, 0);
         bluetooth.printCustom(
           'Agencia: ${nombreAgenciaSeleccionada ?? ''}',
           1,
           0,
         );
-        bluetooth.printCustom(
-          'Monto: $monto ${selectedMoneda ?? ''}', // Usar el monto pasado como parámetro
-          1,
-          0,
-        );
+        bluetooth.printCustom('Monto: $monto ${selectedMoneda ?? ''}', 1, 0);
         bluetooth.printNewLine();
-        bluetooth.printCustom(mensaje, 1, 0);
+
+        // Mensaje principal
+        List<String> mensajeLines = _splitText(
+          mensaje,
+          32,
+        ); // 32 caracteres por línea
+        for (String line in mensajeLines) {
+          bluetooth.printCustom(line, 1, 0);
+        }
+
         bluetooth.printNewLine();
         bluetooth.printCustom('Cobrador: ${widget.cobrador['nombre']}', 1, 0);
         bluetooth.printNewLine();
-        bluetooth.printCustom('Gracias por su pago', 1, 1);
+        bluetooth.printCustom('-- Gracias por su pago --', 1, 1);
         bluetooth.printNewLine();
         bluetooth.printNewLine();
+        bluetooth.printNewLine();
+
+        // Cortar papel (si la impresora lo soporta)
+        bluetooth.paperCut();
+      } else {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Impresora no conectada')));
       }
     } catch (e) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error al imprimir: $e')));
+      debugPrint('Error detallado en impresión: $e');
     }
+  }
+
+  // Método auxiliar para dividir texto en líneas
+  List<String> _splitText(String text, int maxLength) {
+    List<String> lines = [];
+    String remainingText = text;
+
+    while (remainingText.length > maxLength) {
+      int breakPoint = remainingText.lastIndexOf(' ', maxLength);
+      if (breakPoint == -1) breakPoint = maxLength;
+
+      lines.add(remainingText.substring(0, breakPoint));
+      remainingText = remainingText.substring(breakPoint).trim();
+    }
+
+    if (remainingText.isNotEmpty) {
+      lines.add(remainingText);
+    }
+
+    return lines;
   }
 
   // En el método _resetFormulario:
