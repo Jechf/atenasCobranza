@@ -1726,18 +1726,6 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
     });
 
     try {
-      // Verificar si la impresora está desconectada
-      bool usarWhatsApp = false;
-      if (!_isPrinterConnected) {
-        usarWhatsApp = await _mostrarDialogoImpresoraDesconectada();
-        if (!usarWhatsApp) {
-          setState(() {
-            _isSubmitting = false;
-          });
-          return; // El usuario canceló el proceso
-        }
-      }
-
       // 1. Primero insertar el cobro
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token') ?? '';
@@ -1790,9 +1778,9 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
         'db': widget.db,
         'agencia': selectedAgenciaId.toString(),
         'ubicacion': _location,
-        'banca': widget.banca!, // Usar la banca capturada
+        'banca': widget.banca!,
         'monto': '0',
-        'codigo': codigoConfirmacion, // Usar el código obtenido
+        'codigo': codigoConfirmacion,
         'novedad': _explicacionController.text,
         'ticket': insertData['ticket']?.toString() ?? '',
       });
@@ -1822,15 +1810,12 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
           sendData['recibo']?.toString() ?? 'N/A',
         );
 
-        // Enviar por WhatsApp si se seleccionó esa opción
-        if (usarWhatsApp) {
-          await _enviarPorWhatsApp();
-        } else if (_isPrinterConnected) {
-          // Imprimir solo si la impresora está conectada
+        // Imprimir automáticamente si la impresora está conectada
+        if (_isPrinterConnected) {
           await _imprimirComprobante(
             sendData['mensaje'],
             sendData['ticket']?.toString() ?? 'N/A',
-            sendData['recibo']?.toString() ?? 'N/A',
+            sendData['recibo']?.toString() ?? '',
             _montoController.text,
           );
         }
@@ -2044,15 +2029,6 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
       return;
     }
 
-    // Verificar si la impresora está desconectada
-    bool usarWhatsApp = false;
-    if (!_isPrinterConnected) {
-      usarWhatsApp = await _mostrarDialogoImpresoraDesconectada();
-      if (!usarWhatsApp) {
-        return; // El usuario canceló el proceso
-      }
-    }
-
     setState(() {
       _isSubmitting = true;
     });
@@ -2104,18 +2080,15 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
       final data = json.decode(responseData);
 
       if (response.statusCode == 200 && data['e'] == 1) {
-        // Mostrar confirmación
+        // Mostrar confirmación con ambas opciones
         _mostrarModalConfirmacion(
           data['mensaje'],
           data['ticket']?.toString() ?? 'N/A',
           data['recibo']?.toString() ?? 'N/A',
         );
 
-        // Enviar por WhatsApp si se seleccionó esa opción
-        if (usarWhatsApp) {
-          await _enviarPorWhatsApp();
-        } else if (_isPrinterConnected) {
-          // Imprimir solo si la impresora está conectada
+        // Imprimir automáticamente si la impresora está conectada
+        if (_isPrinterConnected) {
           await _imprimirComprobante(
             data['mensaje'],
             data['ticket']?.toString() ?? 'N/A',
@@ -2140,7 +2113,7 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
   }
 
   void _mostrarModalConfirmacion(String mensaje, String ticket, String recibo) {
-    _guardarUltimoTicket(mensaje, ticket, recibo); // Guardar datos del ticket
+    _guardarUltimoTicket(mensaje, ticket, recibo);
 
     showDialog(
       context: context,
@@ -2174,6 +2147,51 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
             ),
           ),
           actions: [
+            // Botón de WhatsApp - SIEMPRE DISPONIBLE
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              onPressed: _enviarPorWhatsApp,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.send, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text("WhatsApp", style: TextStyle(color: Colors.white)),
+                ],
+              ),
+            ),
+            // Botón de imprimir - SIEMPRE VISIBLE, pero deshabilitado si no hay conexión
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor:
+                    _isPrinterConnected ? Color(0xFF1A1B41) : Colors.grey,
+                foregroundColor: Colors.white,
+              ),
+              onPressed:
+                  _isPrinterConnected
+                      ? () async {
+                        await _imprimirComprobante(
+                          mensaje,
+                          ticket,
+                          recibo,
+                          _montoController.text,
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Ticket impreso correctamente'),
+                          ),
+                        );
+                      }
+                      : null,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.print, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text("Imprimir", style: TextStyle(color: Colors.white)),
+                ],
+              ),
+            ),
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
@@ -2247,14 +2265,44 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
                     ),
                   ),
                 ],
+                // Mostrar estado de la impresora
+                SizedBox(height: 15),
+                Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _isPrinterConnected ? Icons.check_circle : Icons.error,
+                        color:
+                            _isPrinterConnected ? Colors.green : Colors.orange,
+                        size: 16,
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        _isPrinterConnected
+                            ? 'Impresora conectada'
+                            : 'Impresora desconectada',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color:
+                              _isPrinterConnected
+                                  ? Colors.green
+                                  : Colors.orange,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text("Cerrar"),
-            ),
+            // Botón de WhatsApp - SIEMPRE DISPONIBLE
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
               onPressed: _enviarPorWhatsApp,
@@ -2267,27 +2315,29 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
                 ],
               ),
             ),
+            // Botón de imprimir - SIEMPRE VISIBLE, pero deshabilitado si no hay conexión
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Color(0xFF1A1B41),
+                backgroundColor:
+                    _isPrinterConnected ? Color(0xFF1A1B41) : Colors.grey,
+                foregroundColor: Colors.white,
               ),
-              onPressed: () async {
-                if (_isPrinterConnected) {
-                  await _imprimirComprobante(
-                    _ultimoTicketMensaje!,
-                    _ultimoTicketNumero!,
-                    _ultimoTicketRecibo ?? '',
-                    _ultimoTicketData!['monto'] ?? '0',
-                  );
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Ticket reimpreso correctamente')),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('No hay impresora conectada')),
-                  );
-                }
-              },
+              onPressed:
+                  _isPrinterConnected
+                      ? () async {
+                        await _imprimirComprobante(
+                          _ultimoTicketMensaje!,
+                          _ultimoTicketNumero!,
+                          _ultimoTicketRecibo ?? '',
+                          _ultimoTicketData!['monto'] ?? '0',
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Ticket reimpreso correctamente'),
+                          ),
+                        );
+                      }
+                      : null,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -2296,6 +2346,10 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
                   Text("Reimprimir", style: TextStyle(color: Colors.white)),
                 ],
               ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text("Cerrar"),
             ),
           ],
         );
@@ -2614,10 +2668,29 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
               ),
             ),
             actions: [
+              // Indicador de estado de impresora
+              Padding(
+                padding: const EdgeInsets.only(right: 8.0, top: 8.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _isPrinterConnected ? Icons.print : Icons.print_disabled,
+                      color: _isPrinterConnected ? Colors.white : Colors.yellow,
+                      size: 18,
+                    ),
+                    Text(
+                      _isPrinterConnected ? 'Conectada' : 'Desconectada',
+                      style: TextStyle(fontSize: 8, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
               PopupMenuButton<String>(
                 surfaceTintColor: Colors.white,
                 icon: const Icon(Icons.more_vert, color: Colors.white),
                 onSelected: _handleMenuSelection,
+
                 itemBuilder:
                     (BuildContext context) => [
                       const PopupMenuItem<String>(
@@ -2649,7 +2722,7 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
                           title: Text('Acerca de'),
                         ),
                       ),
-                      // Agregar opción de cerrar sesión
+
                       PopupMenuItem<String>(
                         value: 'cerrar_sesion',
                         child: const ListTile(
