@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:async';
 import 'config.dart';
 import 'dart:convert';
-import 'dart:ui' as ui;
 import 'session_manager.dart';
 import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
@@ -101,6 +100,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final Duration _sessionTimeout = Duration(minutes: 10);
   DateTime _lastInteractionTime = DateTime.now();
 
+  Timer? _printerCheckTimer;
+  // List<BluetoothDevice> _connectedDevices = [];
+  bool _isCheckingPrinter = false;
+
   @override
   void initState() {
     super.initState();
@@ -110,6 +113,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _checkBluetoothConnection();
     _setDefaultDate();
     _monedasList();
+    _startPrinterCheckTimer();
+    _setupBluetoothListener();
 
     // Inicializar el gestor de sesión y registrar interacción inicial
     SessionManager().initialize().then((_) {
@@ -148,6 +153,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _fechaController.dispose();
     _explicacionController.dispose();
     _codigoController.dispose();
+    _printerCheckTimer?.cancel();
     super.dispose();
   }
 
@@ -176,6 +182,223 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _sessionCheckTimer = Timer.periodic(Duration(seconds: 30), (timer) {
       _checkSessionExpiry();
     });
+  }
+
+  void _setupBluetoothListener() {
+    // Escuchar cambios en dispositivos vinculados
+    bluetooth.onStateChanged().listen((state) {
+      debugPrint('Estado Bluetooth cambiado: $state');
+
+      // Si el estado indica desconexión, intentar reconectar después de un breve delay
+      if (state == 0) {
+        // 0 generalmente indica desconectado
+        Future.delayed(Duration(seconds: 2), () {
+          _checkBluetoothConnectionReal();
+        });
+      } else {
+        _checkConnectedDevices();
+      }
+    });
+  }
+
+  void _startPrinterCheckTimer() {
+    // Verificar cada 5 segundos (más frecuente para reconexión rápida)
+    _printerCheckTimer = Timer.periodic(Duration(seconds: 5), (timer) async {
+      if (!_isPrinterConnected && !_isCheckingPrinter) {
+        await _checkBluetoothConnectionReal();
+      }
+    });
+  }
+
+  Future<void> _checkBluetoothConnectionReal() async {
+    if (_isCheckingPrinter || !mounted) return;
+
+    _isCheckingPrinter = true;
+
+    try {
+      // Método 1: Verificación básica
+      bool? basicConnected = await bluetooth.isConnected;
+
+      // Método 2: Verificación con test de comunicación
+      bool testConnected = await _testPrinterCommunication();
+
+      bool isReallyConnected = (basicConnected ?? false) && testConnected;
+
+      // Si no está conectado, intentar reconexión automática
+      if (!isReallyConnected) {
+        debugPrint(
+          '🟡 Impresora desconectada, intentando reconexión automática...',
+        );
+        await _tryReconnectToSavedPrinter();
+
+        // Verificar nuevamente después del intento de reconexión
+        basicConnected = await bluetooth.isConnected;
+        testConnected = await _testPrinterCommunication();
+        isReallyConnected = (basicConnected ?? false) && testConnected;
+      }
+
+      if (mounted) {
+        setState(() {
+          _isPrinterConnected = isReallyConnected;
+        });
+      }
+
+      debugPrint(
+        'Estado impresora - Básico: $basicConnected, Test: $testConnected, Final: $isReallyConnected',
+      );
+    } catch (e) {
+      debugPrint('🔴 Error verificando impresora: $e');
+      if (mounted) {
+        setState(() {
+          _isPrinterConnected = false;
+        });
+      }
+    } finally {
+      _isCheckingPrinter = false;
+    }
+  }
+
+  Future<void> _tryReconnectToSavedPrinter() async {
+    try {
+      if (_isCheckingPrinter) {
+        debugPrint('🟡 Ya se está intentando reconectar, omitiendo...');
+        // return;
+      }
+
+      _isCheckingPrinter = true;
+      debugPrint('🟡 INICIANDO RECONEXIÓN AUTOMÁTICA...');
+
+      final savedPrinter = await _getSavedPrinter();
+      if (savedPrinter == null) {
+        debugPrint('🔴 No hay impresora guardada para reconexión automática');
+        return;
+      }
+
+      debugPrint('🔵 Impresora guardada encontrada: ${savedPrinter.name}');
+
+      // Verificar estado actual de conexión
+      bool? isCurrentlyConnected = await bluetooth.isConnected;
+      debugPrint('🔵 Estado actual de conexión: $isCurrentlyConnected');
+
+      if (isCurrentlyConnected == true) {
+        debugPrint('🟢 Ya está conectado, omitiendo reconexión');
+        return;
+      }
+
+      debugPrint('🟡 Intentando conectar con: ${savedPrinter.name}');
+
+      // Desconectar primero si es necesario
+      try {
+        await bluetooth.disconnect();
+        await Future.delayed(Duration(milliseconds: 500));
+      } catch (e) {
+        debugPrint('🔴 Error al desconectar: $e');
+      }
+
+      // Intentar conexión con timeout
+      final connectionFuture = bluetooth.connect(savedPrinter);
+      final timeoutFuture = Future.delayed(Duration(seconds: 10), () => null);
+
+      final result = await Future.any([connectionFuture, timeoutFuture]);
+
+      if (result == null) {
+        debugPrint('🔴 Timeout en la reconexión automática');
+        throw TimeoutException('Timeout al conectar con la impresora');
+      }
+
+      // Esperar a que la conexión se estabilice
+      await Future.delayed(Duration(milliseconds: 1500));
+
+      // Verificar conexión
+      bool? connectionSuccessful = await bluetooth.isConnected;
+      debugPrint('🔵 Resultado de reconexión: $connectionSuccessful');
+
+      if (connectionSuccessful == true) {
+        debugPrint(
+          '🟢 RECONEXIÓN AUTOMÁTICA EXITOSA con: ${savedPrinter.name}',
+        );
+        if (mounted) {
+          setState(() {
+            _isPrinterConnected = true;
+          });
+        }
+      } else {
+        debugPrint('🔴 RECONEXIÓN AUTOMÁTICA FALLÓ');
+        if (mounted) {
+          setState(() {
+            _isPrinterConnected = false;
+          });
+        }
+      }
+    } on TimeoutException catch (e) {
+      debugPrint('🔴 Timeout en reconexión automática: $e');
+      if (mounted) {
+        setState(() {
+          _isPrinterConnected = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('🔴 ERROR en reconexión automática: $e');
+      if (mounted) {
+        setState(() {
+          _isPrinterConnected = false;
+        });
+      }
+    } finally {
+      _isCheckingPrinter = false;
+      debugPrint('🟡 FINALIZÓ PROCESO DE RECONEXIÓN AUTOMÁTICA');
+    }
+  }
+
+  Future<void> _clearSavedPrinter() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('connected_printer_name');
+    await prefs.remove('connected_printer_address');
+    debugPrint('Dispositivo guardado eliminado');
+
+    if (mounted) {
+      setState(() {
+        _isPrinterConnected = false;
+      });
+    }
+  }
+
+  Future<bool> _testPrinterCommunication() async {
+    try {
+      // Intentar enviar un comando de prueba silencioso
+      bool? isConnected = await bluetooth.isConnected;
+      return isConnected ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // También actualizar el método original
+  Future<void> _checkBluetoothConnection() async {
+    if (!mounted) return;
+    await _checkBluetoothConnectionReal();
+  }
+
+  Future<void> _checkConnectedDevices() async {
+    try {
+      List<BluetoothDevice> devices = await bluetooth.getBondedDevices();
+      bool foundConnected = false;
+
+      if (mounted) {
+        setState(() {
+          _isPrinterConnected = foundConnected;
+        });
+      }
+
+      debugPrint('Dispositivos conectados: $foundConnected');
+    } catch (e) {
+      debugPrint('Error verificando dispositivos: $e');
+      if (mounted) {
+        setState(() {
+          _isPrinterConnected = false;
+        });
+      }
+    }
   }
 
   // Verificar si la sesión ha expirado
@@ -391,19 +614,6 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
     }
   }
 
-  Future<void> _checkBluetoothConnection() async {
-    try {
-      bool isConnected = await bluetooth.isConnected ?? false;
-      setState(() {
-        _isPrinterConnected = isConnected;
-      });
-    } catch (e) {
-      setState(() {
-        _isPrinterConnected = false;
-      });
-    }
-  }
-
   void _monedasList() {
     selectedMoneda = widget.moneda[0];
   }
@@ -421,72 +631,6 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
     } else {
       return Color(0xFF1A1B41);
     }
-  }
-
-  Future<bool> _mostrarDialogoImpresoraDesconectada() async {
-    return await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              icon: Icon(
-                Icons.warning_amber_rounded,
-                size: 40,
-                color: Colors.orange,
-              ),
-              title: Text(
-                "Impresora Desconectada",
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.orange[800],
-                ),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "La impresora no está conectada. ¿Desea enviar el comprobante por WhatsApp?",
-                    style: TextStyle(fontSize: 14, color: Colors.grey[700]),
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    "Puede configurar la impresora desde el menú de opciones.",
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontStyle: FontStyle.italic,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop(false); // Cancelar
-                  },
-                  child: Text(
-                    "Cancelar",
-                    style: TextStyle(color: Colors.grey[700]),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop(true); // Continuar con WhatsApp
-                  },
-                  child: Text(
-                    "Enviar por WhatsApp",
-                    style: TextStyle(
-                      color: Color(0xFF1A1B41),
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
   }
 
   void _guardarUltimoTicket(String mensaje, String ticket, String recibo) {
@@ -820,57 +964,125 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
   }
 
   void _showBluetoothConnectionDialog() async {
-    List<BluetoothDevice> devices = await bluetooth.getBondedDevices();
-    showDialog(
-      // ignore: use_build_context_synchronously
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('Seleccionar impresora'),
-          content: SizedBox(
-            width:
-                MediaQuery.of(context).size.width * 0.8, // 80% of screen width
-            height:
-                MediaQuery.of(context).size.height *
-                0.5, // 50% of screen height
-            child: ListView.builder(
-              shrinkWrap: true, // Importante para renderizar correctamente
-              itemCount: devices.length,
-              itemBuilder: (context, index) {
-                return ListTile(
-                  title: Text(devices[index].name ?? ''),
-                  subtitle: Text(devices[index].address ?? 'Sin dirección'),
-                  onTap: () async {
-                    try {
-                      await bluetooth.connect(devices[index]);
-                      setState(() {
-                        _isPrinterConnected = true;
-                      });
-                      // ignore: use_build_context_synchronously
-                      Navigator.of(context).pop();
-                      // ignore: use_build_context_synchronously
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Impresora conectada')),
-                      );
-                    } catch (e) {
-                      // ignore: use_build_context_synchronously
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error al conectar: $e')),
-                      );
-                    }
+    try {
+      List<BluetoothDevice> devices = await bluetooth.getBondedDevices();
+
+      // Obtener el dispositivo guardado para destacarlo
+      final savedPrinter = await _getSavedPrinter();
+
+      showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: Text('Seleccionar impresora'),
+            content: SizedBox(
+              width: MediaQuery.of(context).size.width * 0.8,
+              height: MediaQuery.of(context).size.height * 0.5,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: devices.length,
+                itemBuilder: (context, index) {
+                  final device = devices[index];
+                  final isSavedPrinter =
+                      savedPrinter != null &&
+                      device.address == savedPrinter.address;
+
+                  return Card(
+                    margin: EdgeInsets.symmetric(vertical: 4),
+                    color: isSavedPrinter ? Colors.blue[50] : null,
+                    child: ListTile(
+                      leading: Icon(
+                        Icons.print,
+                        color: isSavedPrinter ? Colors.blue : Colors.grey,
+                      ),
+                      title: Text(
+                        device.name ?? 'Sin nombre',
+                        style: TextStyle(
+                          fontWeight:
+                              isSavedPrinter
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                          color: isSavedPrinter ? Colors.blue : Colors.black,
+                        ),
+                      ),
+                      subtitle: Text(
+                        device.address ?? 'Sin dirección',
+                        style: TextStyle(
+                          color: isSavedPrinter ? Colors.blue : Colors.grey,
+                        ),
+                      ),
+                      trailing:
+                          isSavedPrinter
+                              ? Icon(Icons.star, color: Colors.blue, size: 16)
+                              : null,
+                      onTap: () async {
+                        try {
+                          await bluetooth.connect(device);
+                          await _saveConnectedDevice(device);
+
+                          setState(() {
+                            _isPrinterConnected = true;
+                          });
+
+                          Navigator.of(context).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Impresora "${device.name}" conectada y guardada',
+                              ),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error al conectar: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+            actions: [
+              if (savedPrinter != null)
+                TextButton(
+                  onPressed: () {
+                    _clearSavedPrinter();
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Impresora guardada eliminada')),
+                    );
                   },
-                );
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text('Cancelar'),
-            ),
-          ],
-        );
-      },
+                  child: Text(
+                    'Eliminar guardada',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text('Cancelar'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al cargar dispositivos: $e')),
+      );
+    }
+  }
+
+  Future<void> _saveConnectedDevice(BluetoothDevice device) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('connected_printer_name', device.name ?? '');
+    await prefs.setString('connected_printer_address', device.address ?? '');
+    debugPrint(
+      'Dispositivo guardado para reconexión automática: ${device.name}',
     );
   }
 
@@ -1591,6 +1803,39 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
         );
       },
     );
+  }
+
+  Future<BluetoothDevice?> _getSavedPrinter() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedName = prefs.getString('connected_printer_name');
+    final savedAddress = prefs.getString('connected_printer_address');
+
+    debugPrint(
+      'Buscando dispositivo guardado: nombre="$savedName", dirección="$savedAddress"',
+    );
+
+    // if (savedName == null || savedAddress == null) return null;
+
+    try {
+      List<BluetoothDevice> bondedDevices = await bluetooth.getBondedDevices();
+      debugPrint(
+        'Dispositivos vinculados encontrados: ${bondedDevices.length}',
+      );
+      for (BluetoothDevice device in bondedDevices) {
+        if (device.name == savedName && device.address == savedAddress) {
+          debugPrint('Dispositivo guardado encontrado: ${device.name}');
+          return device;
+        }
+      }
+
+      debugPrint(
+        'Dispositivo guardado no encontrado en dispositivos vinculados',
+      );
+      return null;
+    } catch (e) {
+      debugPrint('Error al buscar dispositivo guardado: $e');
+      return null;
+    }
   }
 
   Future<void> _actualizarUbicacionAgencia(String codigoAgencia) async {
@@ -2315,7 +2560,7 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
                 ],
               ),
             ),
-            // Botón de imprimir - SIEMPRE VISIBLE, pero deshabilitado si no hay conexión
+
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor:
