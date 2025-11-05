@@ -242,7 +242,7 @@ class _LoginScreenState extends State<LoginScreen> {
             decoration: BoxDecoration(
               image: DecorationImage(
                 image: AssetImage(
-                  'assets/icon/fondo_login.jpg',
+                  'assets/icon/fondo_login.png',
                 ), // Ruta de tu imagen
                 fit: BoxFit.cover, // Cubre todo el espacio disponible
               ),

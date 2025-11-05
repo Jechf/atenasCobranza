@@ -13,7 +13,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'App Zobranza',
+      title: 'App Cobranza',
       theme: ThemeData(
         // Cambia el color primario y secundario
         colorScheme: ColorScheme.light(

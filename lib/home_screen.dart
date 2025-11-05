@@ -2892,7 +2892,7 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
               mainAxisSize: MainAxisSize.max,
               children: [
                 Image.asset(
-                  'assets/icon/logo.png',
+                  'assets/icon/logo_blanco.png',
                   height: 30,
                   fit: BoxFit.contain,
                 ),
@@ -2906,7 +2906,10 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
             flexibleSpace: Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [Color.fromARGB(168, 255, 174, 0), Color(0xFF1A1B41)],
+                  colors: [
+                    Color(0xFF722F37), // Vinotinto
+                    Color(0xFF1A1B41), // Azul oscuro
+                  ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -3597,14 +3600,14 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
                   ],
                 ),
 
-                SizedBox(height: 10),
-                Padding(
-                  padding: const EdgeInsets.only(top: 10.0),
-                  child: Text(
-                    'Sesión activa - Tiempo restante: ${_getRemainingTimeString()}',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ),
+                // SizedBox(height: 10),
+                // Padding(
+                //   padding: const EdgeInsets.only(top: 10.0),
+                //   child: Text(
+                //     'Sesión activa - Tiempo restante: ${_getRemainingTimeString()}',
+                //     style: TextStyle(fontSize: 12, color: Colors.grey),
+                //   ),
+                // ),
               ],
             ),
           ),
