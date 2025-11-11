@@ -68,6 +68,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String? selectedMoneda;
   String? saldo;
   String? _numeroTicket;
+  String? _telefonoAgenciaActual;
 
   final ImagePicker _picker = ImagePicker();
   final TextEditingController _montoController = TextEditingController();
@@ -1172,7 +1173,7 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
         debugPrint('\nBody de respuesta (parsed JSON):');
         debugPrint('• Estado (e): ${data['e']}');
 
-        // VALIDACIÓN CRÍTICA: Verificar si data es un Map vacío (no hay rutas)
+        // VALIDACIÓN CRÍTICA: Verificar si data es un Map vacío (no hay rutas) (falta metodo para el caso)
         if (data['data'] is Map && (data['data'] as Map).isEmpty) {
           debugPrint('⚠️ No hay rutas cargadas para este usuario');
 
@@ -1232,7 +1233,6 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
       } catch (e) {
         debugPrint('\n🔴 Error al parsear JSON: $e');
 
-        // En caso de error de parsing, también mostrar el diálogo
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _mostrarDialogoNoHayRutas();
         });
@@ -1287,7 +1287,7 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
           actions: [
             TextButton(
               onPressed: () {
-                _logout(); // Cerrar sesión automáticamente
+                _logout(); // Cerrar sesión automáticamente luego de los 10min solicitados por Carlos
               },
               child: Text(
                 "Aceptar",
@@ -1341,7 +1341,7 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
-        body: json.encode(requestBody), // Enviamos el cuerpo completo
+        body: json.encode(requestBody),
       );
 
       debugPrint('══════════════════════════════════════════════════');
@@ -1452,7 +1452,6 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
       debugPrint('\n🔴 Error en la solicitud: $e');
       debugPrint('══════════════════════════════════════════════════');
 
-      // En caso de error de red, también mostrar el diálogo
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _mostrarDialogoNoHayAgencias(zonaId);
       });
@@ -1467,9 +1466,8 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
     }
   }
 
-  // Método para mostrar el diálogo cuando no hay agencias en la zona
+  //  diálogo cuando no hay agencias en la zona
   void _mostrarDialogoNoHayAgencias(String zonaId) {
-    // Buscar el nombre de la zona seleccionada
     String nombreZona = 'la zona seleccionada';
     try {
       final zonaSeleccionada = zonas.firstWhere(
@@ -1483,7 +1481,8 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
 
     showDialog(
       context: context,
-      barrierDismissible: true, // El usuario puede cerrar tocando fuera
+      barrierDismissible:
+          true, //sirve para cerrar haciendo tap fuera del recuadro
       builder: (BuildContext context) {
         return AlertDialog(
           icon: Icon(Icons.business_outlined, size: 40, color: Colors.blue),
@@ -1539,23 +1538,22 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
     try {
       setState(() {
         isLoadingSaldo = true;
-        _ultimoPago = null; // Resetear información de último pago
+        _ultimoPago = null;
         _tieneUltimoPago = false;
+        _telefonoAgenciaActual = null;
       });
 
-      // OBTENER LA FECHA DEL CONTROLADOR EN LUGAR DE LA FECHA ACTUAL
       String fechaParaConsulta;
       if (_fechaController.text.isNotEmpty) {
         fechaParaConsulta = _fechaController.text.replaceAll('-', '');
       } else {
-        // Fallback a fecha actual si no hay fecha seleccionada
         fechaParaConsulta = DateFormat('yyyyMMdd').format(DateTime.now());
       }
 
       final requestBody = {
         "usuario": widget.cobrador['id'].toString(),
         "db": widget.db,
-        "fecha": fechaParaConsulta, // USAR LA FECHA DEL CONTROLADOR
+        "fecha": fechaParaConsulta,
         "tipo": "todas",
         "mostrar": "saldo",
         "agencia": codigoAgencia,
@@ -1580,7 +1578,11 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
         if (data['data'] is List && data['data'].isNotEmpty) {
           final agenciaData = data['data'][0];
 
-          // CAPTURAR INFORMACIÓN DEL ÚLTIMO PAGO
+          setState(() {
+            _telefonoAgenciaActual = agenciaData['telefono']?.toString();
+          });
+
+          // CAPTURAR INFORMACIÓN DEL ÚLTIMO PAGO (se puede imprimir luego)
           if (agenciaData['ult_pago'] is List &&
               agenciaData['ult_pago'].isNotEmpty) {
             final ultimoPagoData = agenciaData['ult_pago'][0];
@@ -1605,11 +1607,12 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
             saldo = (agenciaData['acobrar']);
             nombreAgenciaSeleccionada = agenciaData['nombre']?.toString();
             _ubicacionAgenciaActual = agenciaData['ubicacion']?.toString();
+            _telefonoAgenciaActual = agenciaData['telefono']?.toString();
+
             debugPrint(
-              'Ubicación agencia ${agenciaData['codigo']}: $_ubicacionAgenciaActual',
+              'Teléfono agencia ${agenciaData['codigo']}: $_telefonoAgenciaActual',
             );
 
-            // Guardar siempre la ubicación si existe
             if (agenciaData['ubicacion'] != null) {
               _ultimoTicketData ??= {};
               _ultimoTicketData!['ubicacionAgencia'] =
@@ -1988,6 +1991,7 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
           'ubicacion': _location,
           'banca': widget.banca,
           'monto': '0',
+          'telefono': _telefonoAgenciaActual ?? '',
           'proceso': 'enviado',
           'moneda': selectedMoneda ?? 'COP',
           'device': _deviceId,
@@ -2218,6 +2222,7 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
           'ubicacion': _location,
           'banca': widget.banca,
           'monto': _montoController.text,
+          'telefono': _telefonoAgenciaActual ?? '',
           'proceso': 'enviado',
           'moneda': selectedMoneda ?? 'COP',
           'device': _deviceId,
@@ -2892,7 +2897,7 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
               mainAxisSize: MainAxisSize.max,
               children: [
                 Image.asset(
-                  'assets/icon/logo_blanco.png',
+                  'assets/icon/logo.png',
                   height: 30,
                   fit: BoxFit.contain,
                 ),
@@ -2906,10 +2911,7 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
             flexibleSpace: Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [
-                    Color(0xFF722F37), // Vinotinto
-                    Color(0xFF1A1B41), // Azul oscuro
-                  ],
+                  colors: [Color.fromARGB(168, 255, 174, 0), Color(0xFF1A1B41)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -3242,6 +3244,7 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
                                     selectedAgenciaId = null;
                                     saldo = null;
                                     nombreAgenciaSeleccionada = null;
+                                    _telefonoAgenciaActual = null;
                                   });
                                   return;
                                 }
@@ -3601,6 +3604,7 @@ ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}
                 ),
 
                 // SizedBox(height: 10),
+                //descomentar si se quiere mostrar el tiempo restante de la sesion, no se actualiza constantemente
                 // Padding(
                 //   padding: const EdgeInsets.only(top: 10.0),
                 //   child: Text(
